@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Doctor Sleep Better</title>
+    <link rel="manifest" href="./manifest.json">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <style>
+        /* --- 4.1 配色系統與變數 --- */
+        :root {
+            --bg-color: #FAF9F6;
+            --card-bg: #FFFFFF;
+            --text-main: #37474F;
+            --text-sub: #78909C;
+            --primary: #FBC02D; /* 太陽黃 */
+            --teal: #00796B;     /* 強調色 */
+            --teal-light: #E0F2F1;
+            --danger: #E53935;
+            --border: #ECEFF1;
+            --shadow: 0 2px 8px rgba(0,0,0,0.05);
+            --radius: 12px;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        /* 深色模式 */
+        [data-theme="dark"] {
+            --bg-color: #121212;
+            --card-bg: #1E1E1E;
+            --text-main: #ECEFF1;
+            --text-sub: #B0BEC5;
+            --primary: #FDD835;
+            --teal: #80CBC4;
+            --teal-light: #004D40;
+            --danger: #EF9A9A;
+            --border: #333;
+            --shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-family);
+            margin: 0;
+            padding-bottom: 80px; /* 預留底部導航空間 */
+            transition: background-color 0.3s ease;
+        }
+
+        /* --- UI Components --- */
+        .container { max-width: 800px; margin: 0 auto; padding: 16px; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h1 { font-size: 1.5rem; margin: 0; color: var(--text-main); }
+        
+        /* 卡片樣式 */
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            position: relative;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: #333;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-outline { background: transparent; border: 1px solid var(--text-sub); color: var(--text-main); }
+        .btn-ghost { background: transparent; color: var(--teal); padding: 4px; }
+
+        /* 輸入框 */
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-color);
+            color: var(--text-main);
+            margin-bottom: 10px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+
+        /* --- 病房與病人 --- */
+        .bed-badge {
+            background: var(--teal);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
+        .status-processing { font-size: 0.8rem; color: var(--text-sub); animation: pulse 1.5s infinite; }
+        .status-done { color: var(--primary); font-weight: bold; }
+
+        @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+        /* --- 智慧標註 Smart Annotation --- */
+        .ai-highlight {
+            border-bottom: 2px solid var(--teal);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .ai-highlight:hover { background: var(--teal-light); }
+        
+        .annotation-popover {
+            background: var(--card-bg);
+            border: 1px solid var(--teal);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 5px;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .annotation-popover.active { display: block; }
+
+        /* --- 底部導航 --- */
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--card-bg);
+            display: flex;
+            justify-content: space-around;
+            padding: 12px 0;
+            border-top: 1px solid var(--border);
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            z-index: 100;
+        }
+        .nav-item { text-align: center; color: var(--text-sub); font-size: 0.8rem; cursor: pointer; }
+        .nav-item.active { color: var(--teal); font-weight: bold; }
+        .nav-icon { font-size: 1.4rem; display: block; margin-bottom: 2px; }
+
+        /* --- 會議精靈 Mermaid --- */
+        #mermaid-container {
+            width: 100%;
+            overflow-x: auto;
+            background: white; /* Mermaid 需要白底比較清楚 */
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        /* --- 頁面切換 --- */
+        .page { display: none; }
+        .page.active { display: block; }
+
+        /* Float Action Button (AI Lookup) */
+        #ai-lookup-btn {
+            position: fixed;
+            background: var(--teal);
+            color: white;
+            border-radius: 20px;
+            padding: 8px 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 999;
+            display: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ai-lookup-btn">☀️ AI 簡介</div>
+
+    <div class="container">
+        
+        <div id="page-login" class="page active">
+            <div class="card" style="text-align: center; margin-top: 20vh;">
+                <h2>Doctor Sleep Better 🏥</h2>
+                <p>Warm & Efficient Clinical Assistant</p>
+                <input type="text" id="supabase-url" placeholder="Supabase URL">
+                <input type="text" id="supabase-key" placeholder="Supabase Anon Key">
+                <input type="email" id="email" placeholder="Email">
+                <input type="password" id="password" placeholder="Password">
+                <button class="btn" style="width: 100%" onclick="app.login()">Login / Sign Up</button>
+            </div>
+        </div>
+
+        <div id="page-wards" class="page">
+            <div class="header">
+                <h1>My Wards</h1>
+                <button class="btn" onclick="app.showModal('modal-add-ward')">➕ New Ward</button>
+            </div>
+            <div id="wards-list"></div>
+        </div>
+
+        <div id="page-patients" class="page">
+            <div class="header">
+                <h1 id="current-ward-name">Ward 12C</h1>
+                <button class="btn" onclick="app.showModal('modal-add-patient')">➕ Add Pt</button>
+            </div>
+            <div id="patients-list"></div>
+        </div>
+
+        <div id="page-meeting" class="page">
+            <div class="header">
+                <h1>Meeting Ghost 👻</h1>
+                <button id="record-btn" class="btn" onclick="app.toggleRecording()">🎙️ Start</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="card">
+                    <h3>Transcript & Summary</h3>
+                    <div id="meeting-text" style="height: 300px; overflow-y: auto; font-size: 0.9rem;"></div>
+                </div>
+                <div class="card">
+                    <h3>Visual Map</h3>
+                    <div id="mermaid-container" class="mermaid">
+                        graph TD; A[Start] --> B[Waiting for audio...];
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-settings" class="page">
+            <div class="header"><h1>Settings</h1></div>
+            <div class="card">
+                <h3>AI Configuration</h3>
+                <label>Text API Key (Gemini 2.5)</label>
+                <input type="password" id="key-text" placeholder="AI Key for Wards">
+                <label>Voice API Key (Gemini 1.5)</label>
+                <input type="password" id="key-voice" placeholder="AI Key for Meetings">
+                <button class="btn" onclick="app.saveSettings()">Save Keys</button>
+            </div>
+            <div class="card">
+                <h3>Preferences</h3>
+                <button class="btn btn-outline" onclick="app.toggleTheme()">Toggle Dark Mode 🌙</button>
+                <button class="btn btn-outline" onclick="app.logout()" style="margin-top:10px; border-color: var(--danger); color: var(--danger)">Logout</button>
+            </div>
+        </div>
+
+    </div>
+
+    <nav class="nav-bar" id="main-nav" style="display: none;">
+        <div class="nav-item active" onclick="app.navTo('page-wards')">
+            <span class="nav-icon">🛏️</span> Ward
+        </div>
+        <div class="nav-item" onclick="app.navTo('page-meeting')">
+            <span class="nav-icon">🎙️</span> Meeting
+        </div>
+        <div class="nav-item" onclick="app.navTo('page-settings')">
+            <span class="nav-icon">⚙️</span> Settings
+        </div>
+    </nav>
+
+    <div id="modal-add-patient" class="card" style="display:none; position:fixed; top:20%; left:5%; right:5%; z-index:200; box-shadow: 0 0 100px rgba(0,0,0,0.5);">
+        <h3>New Patient</h3>
+        <input type="text" id="new-bed" placeholder="Bed No. (e.g. 10-1)">
+        <textarea id="new-raw" rows="5" placeholder="Paste Admission/Progress Note here..."></textarea>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button class="btn btn-outline" onclick="app.hideModal('modal-add-patient')">Cancel</button>
+            <button class="btn" onclick="app.addPatient()">Save & Process</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 初始化設定 ---
+        const DB_KEY = 'dsb_local_config';
+        let supabase = null;
+        let currentUser = null;
+        let currentWardId = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+
+        // 初始化 Mermaid
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+
+        const app = {
+            state: {
+                theme: 'light',
+                keys: { text: '', voice: '' }
+            },
+
+            init: async () => {
+                // 1. 讀取本地設定
+                const localData = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
+                if (localData.supabaseUrl && localData.supabaseKey) {
+                    app.initSupabase(localData.supabaseUrl, localData.supabaseKey);
+                }
+                
+                // 註冊 Service Worker
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('./sw.js');
+                }
+
+                // 監聽文字選取 (Smart Annotation)
+                document.addEventListener('selectionchange', app.handleSelection);
+                document.getElementById('ai-lookup-btn').addEventListener('click', app.processAnnotation);
+            },
+
+            initSupabase: (url, key) => {
+                try {
+                    supabase = window.supabase.createClient(url, key);
+                    document.getElementById('supabase-url').value = url;
+                    document.getElementById('supabase-key').value = key;
+                    app.checkSession();
+                } catch (e) {
+                    console.error("Supabase init fail", e);
+                }
+            },
+
+            login: async () => {
+                const url = document.getElementById('supabase-url').value;
+                const key = document.getElementById('supabase-key').value;
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+
+                // 儲存連線設定到 LocalStorage
+                localStorage.setItem(DB_KEY, JSON.stringify({ supabaseUrl: url, supabaseKey: key }));
+                app.initSupabase(url, key);
+
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) {
+                    // 若失敗則嘗試註冊 (簡化流程)
+                    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+                    if (signUpError) alert('Login/Signup Failed: ' + error.message);
+                    else alert('Signup successful! Check email or login.');
+                } else {
+                    app.onLoginSuccess(data.user);
+                }
+            },
+
+            checkSession: async () => {
+                const { data } = await supabase.auth.getSession();
+                if (data.session) app.onLoginSuccess(data.session.user);
+            },
+
+            onLoginSuccess: async (user) => {
+                currentUser = user;
+                document.getElementById('page-login').classList.remove('active');
+                document.getElementById('main-nav').style.display = 'flex';
+                app.navTo('page-wards');
+                app.loadSettings();
+                app.loadWards();
+            },
+
+            logout: async () => {
+                await supabase.auth.signOut();
+                location.reload();
+            },
+
+            // --- Navigation ---
+            navTo: (pageId) => {
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                document.getElementById(pageId).classList.add('active');
+                
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                // 簡單 Highlight 當前 Nav (略)
+            },
+
+            showModal: (id) => document.getElementById(id).style.display = 'block',
+            hideModal: (id) => document.getElementById(id).style.display = 'none',
+
+            // --- Settings & Theme ---
+            toggleTheme: () => {
+                const body = document.body;
+                const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                body.setAttribute('data-theme', newTheme);
+            },
+
+            loadSettings: async () => {
+                const { data } = await supabase.from('user_settings').select('*').eq('user_id', currentUser.id).single();
+                if (data) {
+                    document.getElementById('key-text').value = data.gemini_key_text || '';
+                    document.getElementById('key-voice').value = data.gemini_key_voice || '';
+                    app.state.keys.text = data.gemini_key_text;
+                    app.state.keys.voice = data.gemini_key_voice;
+                }
+            },
+
+            saveSettings: async () => {
+                const textKey = document.getElementById('key-text').value;
+                const voiceKey = document.getElementById('key-voice').value;
+                
+                const updates = {
+                    user_id: currentUser.id,
+                    gemini_key_text: textKey,
+                    gemini_key_voice: voiceKey,
+                    updated_at: new Date()
+                };
+
+                const { error } = await supabase.from('user_settings').upsert(updates);
+                if (!error) {
+                    app.state.keys.text = textKey;
+                    app.state.keys.voice = voiceKey;
+                    alert('Settings Saved!');
+                }
+            },
+
+            // --- Wards & Patients Logic ---
+            loadWards: async () => {
+                const { data } = await supabase.from('wards').select('*');
+                const list = document.getElementById('wards-list');
+                list.innerHTML = '';
+                data.forEach(ward => {
+                    const div = document.createElement('div');
+                    div.className = 'card';
+                    div.innerHTML = `<h3>${ward.name}</h3><button class="btn btn-outline" onclick="app.openWard('${ward.id}', '${ward.name}')">Enter</button>`;
+                    list.appendChild(div);
+                });
+            },
+
+            openWard: async (wardId, wardName) => {
+                currentWardId = wardId;
+                document.getElementById('current-ward-name').innerText = wardName;
+                app.navTo('page-patients');
+                app.loadPatients();
+            },
+
+            loadPatients: async () => {
+                const { data } = await supabase.from('patients').select('*').eq('ward_id', currentWardId).order('bed_no', { ascending: true });
+                const list = document.getElementById('patients-list');
+                list.innerHTML = '';
+                
+                data.forEach(pt => {
+                    const isProcessing = pt.status === 'processing';
+                    const medData = pt.medical_data || {};
+                    
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    // 渲染邏輯
+                    card.innerHTML = `
+                        <div style="display:flex; justify-content:space-between;">
+                            <div>
+                                <span class="bed-badge">${pt.bed_no}</span>
+                                <span style="font-weight:bold; margin-left:8px;">${medData.diagnosis || (isProcessing ? 'Analyzing...' : '<Unknown>')}</span>
+                            </div>
+                            ${pt.status === 'done' ? '<span class="status-done">✅ Done</span>' : ''}
+                            ${isProcessing ? '<span class="status-processing">Processing...</span>' : ''}
+                        </div>
+                        <div style="margin-top: 10px; font-size: 0.9rem; color: var(--text-sub);">
+                            ${medData.course ? marked.parse(medData.course) : ''}
+                        </div>
+                        `;
+                    list.appendChild(card);
+                });
+            },
+
+            addPatient: async () => {
+                const bed = document.getElementById('new-bed').value;
+                const raw = document.getElementById('new-raw').value;
+                app.hideModal('modal-add-patient');
+
+                // 1. 建立空殼
+                const { data, error } = await supabase.from('patients').insert({
+                    ward_id: currentWardId,
+                    bed_no: bed,
+                    raw_data: raw,
+                    status: 'processing'
+                }).select().single();
+
+                if (error) return alert('Error adding patient');
+                app.loadPatients(); // Refresh UI
+
+                // 2. 背景觸發 AI (這裡模擬 Backend Process，實際PWA可直接呼叫)
+                app.processPatientData(data.id, raw);
+            },
+
+            processPatientData: async (patientId, text) => {
+                // 呼叫 Gemini 解析 (雙通道：Text Key)
+                if (!app.state.keys.text) return;
+                
+                const prompt = `你是臨床助理。請分析以下病歷資料，並回傳 JSON 格式：
+                { "diagnosis": "主診斷", "course": "病程摘要(Markdown)", "todos": ["待辦1", "待辦2"] }
+                資料：${text}`;
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${app.state.keys.text}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    const result = await response.json();
+                    const aiText = result.candidates[0].content.parts[0].text;
+                    // 清理 JSON 字串 (移除 markdown code block 符號)
+                    const jsonStr = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const aiJson = JSON.parse(jsonStr);
+
+                    // 寫回資料庫 & 刪除 Raw Data
+                    await supabase.from('patients').update({
+                        medical_data: aiJson,
+                        raw_data: null, // Process & Discard 策略
+                        status: 'done'
+                    }).eq('id', patientId);
+
+                    app.loadPatients(); // 更新 UI 顯示 Done
+
+                } catch (e) {
+                    console.error("AI Error", e);
+                }
+            },
+
+            // --- Smart Annotation Logic ---
+            handleSelection: () => {
+                const selection = window.getSelection();
+                const btn = document.getElementById('ai-lookup-btn');
+                
+                if (selection.toString().length > 2) {
+                    const range = selection.getRangeAt(0);
+                    const rect = range.getBoundingClientRect();
+                    btn.style.left = `${rect.left}px`;
+                    btn.style.top = `${rect.top - 40}px`;
+                    btn.style.display = 'block';
+                } else {
+                    btn.style.display = 'none';
+                }
+            },
+
+            processAnnotation: async () => {
+                const selection = window.getSelection();
+                const text = selection.toString();
+                const btn = document.getElementById('ai-lookup-btn');
+                btn.innerText = "查詢中...";
+
+                // Call Gemini API (使用 Text Key)
+                // 這裡省略具體 Fetch 代碼，邏輯同上
+                // 成功後，將選取範圍用 span 包裹並加上 .ai-highlight class
+                
+                setTimeout(() => {
+                    btn.style.display = 'none';
+                    btn.innerText = "☀️ AI 簡介";
+                    alert(`AI 解釋：${text} 是一種... (此功能需實作完整 DOM 替換邏輯)`);
+                }, 1000);
+            },
+
+            // --- Meeting Ghost (Logic Only Demo) ---
+            toggleRecording: () => {
+                const btn = document.getElementById('record-btn');
+                if (btn.innerText.includes('Start')) {
+                    btn.innerText = '⏹ Stop';
+                    btn.classList.add('btn-outline');
+                    // Start MediaRecorder logic here (Mock)
+                    app.meetingInterval = setInterval(app.sliceAndSendAudio, 10000); // Demo: 每 10 秒切片
+                } else {
+                    btn.innerText = '🎙️ Start';
+                    btn.classList.remove('btn-outline');
+                    clearInterval(app.meetingInterval);
+                }
+            },
+
+            sliceAndSendAudio: async () => {
+                // 1. 取得音訊 Blob
+                // 2. 傳給 Gemini 1.5 Flash (Voice Key)
+                // 3. 取得回應包含 Markdown 和 Mermaid Code
+                
+                // 模擬更新 UI
+                const textDiv = document.getElementById('meeting-text');
+                textDiv.innerHTML += `<p>• AI 聽到了一些關鍵字並正在整理...</p>`;
+                
+                // 模擬 Mermaid 更新
+                const mermaidDiv = document.getElementById('mermaid-container');
+                const mockGraph = `graph TD; A[Symptom] --> B{Check BP}; B -- High --> C[Administer Meds]; B -- Normal --> D[Observe];`;
+                mermaidDiv.removeAttribute('data-processed'); // 重置 mermaid
+                mermaidDiv.innerHTML = mockGraph;
+                mermaid.init(undefined, mermaidDiv);
+            }
+        };
+
+        // 啟動 App
+        window.addEventListener('DOMContentLoaded', app.init);
+    </script>
+</body>
+</html>
