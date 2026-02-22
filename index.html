@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Doctor Sleep Better</title>
     <link rel="manifest" href="./manifest.json">
-    <link rel="icon" type="image/png" href="./logo.PNG">
-    <link rel="apple-touch-icon" href="./logo.PNG">
+    <link rel="icon" type="image/jpeg" href="./logo.jpg">
+    <link rel="apple-touch-icon" href="./logo.jpg">
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
@@ -92,7 +92,12 @@
         .status-done { color: var(--primary); font-weight: bold; font-size: 0.8rem; animation: popIn 0.5s; }
         
         @keyframes spin { 100% { transform: rotate(360deg); } }
-        @keyframes popIn { 0% { transform: scale(0); } 80% { transform: scale(1.2); } 100% { transform: scale(1); } }
+        /* 已修復的 popIn 動畫，確保不影響原本位置 */
+        @keyframes popIn { 
+            0% { transform: scale(0); } 
+            80% { transform: scale(1.2); } 
+            100% { transform: scale(1); } 
+        }
 
         /* Detail View Styles */
         .detail-section { margin-bottom: 15px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
@@ -135,23 +140,30 @@
         }
         .action-btn:last-child { border-bottom: none; font-weight: bold; margin-top: 10px; color: var(--text-sub); }
 
-        /* Mermaid */
         #mermaid-container {
             width: 100%; min-height: 200px; overflow-x: auto;
             background: white; padding: 10px; border-radius: 8px;
             display: flex; justify-content: center; align-items: center;
         }
 
-        /* --- 客製化彈窗 (Custom Modals) --- */
+        /* --- 客製化彈窗 (修復動畫衝突) --- */
         #global-overlay {
             display:none; position:fixed; top:0; left:0; right:0; bottom:0; 
             background:rgba(0,0,0,0.5); z-index:9998; backdrop-filter: blur(2px);
         }
         
         .custom-modal {
-            display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); 
+            display:none; position:fixed; top:50%; left:50%; 
+            /* 注意：把 transform: translate 移交給動畫去控制 */
             width:85%; max-width:320px; z-index:9999; box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
-            text-align:center; margin:0; padding: 20px; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-align:center; margin:0; padding: 20px; 
+            animation: popInCenter 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* 將 translate 寫進 keyframes 內，強制它永遠在中心點縮放 */
+        @keyframes popInCenter { 
+            0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } 
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 
         }
     </style>
 </head>
@@ -328,7 +340,6 @@
                 models: { text: 'gemini-2.0-flash', voice: 'gemini-1.5-flash' }
             },
 
-            // --- 客製化彈窗邏輯 ---
             showAlert: (msg, title="提示") => {
                 document.getElementById('alert-title').innerText = title;
                 document.getElementById('alert-message').innerText = msg;
@@ -365,9 +376,8 @@
 
             initSupabase: (url, key) => {
                 try {
-                    if (!supabaseClient) {
-                        supabaseClient = window.supabase.createClient(url, key);
-                    }
+                    // 【修正】確保每次呼叫都強制重新建立連線，防止手機端吃到舊的假金鑰快取
+                    supabaseClient = window.supabase.createClient(url, key);
                     document.getElementById('supabase-url').value = url;
                     document.getElementById('supabase-key').value = key;
                     app.checkSession();
@@ -382,6 +392,7 @@
 
                 if (!url || !key) return app.showAlert('請填寫 Supabase URL 與 Key', '連線錯誤');
 
+                // 儲存金鑰並強制更新 supabaseClient 實例
                 localStorage.setItem(DB_KEY, JSON.stringify({ supabaseUrl: url, supabaseKey: key }));
                 app.initSupabase(url, key); 
 
@@ -411,13 +422,13 @@
             logout: async () => { 
                 app.showConfirm('確定要登出嗎？', async () => {
                     if(supabaseClient) await supabaseClient.auth.signOut(); 
+                    localStorage.removeItem(DB_KEY); // 登出時順便清除本機快取以防萬一
                     location.reload(); 
                 }, '登出確認');
             },
 
             loadSettings: async () => {
                 if(!currentUser) return;
-                // 改用 maybeSingle() 防止新帳號初次登入時出現 406 Error 導致中斷
                 const { data, error } = await supabaseClient.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle();
                 
                 if (data) {
@@ -460,7 +471,6 @@
                 }
             },
 
-            // --- Navigation ---
             navTo: (pageId) => {
                 document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
                 document.getElementById(pageId).classList.add('active');
@@ -479,7 +489,6 @@
                 else if(pageId.includes('settings')) document.getElementById('nav-settings').classList.add('active');
             },
 
-            // --- Ward & Patient Logic ---
             loadWards: async () => {
                 const { data } = await supabaseClient.from('wards').select('*').order('created_at', { ascending: true });
                 const list = document.getElementById('wards-list');
@@ -672,7 +681,6 @@
                 }
             },
 
-            // --- Long Press & Archive Logic ---
             startLongPress: (e, patient) => {
                 selectedPatientId = patient.id;
                 selectedPatientData = patient; 
@@ -743,7 +751,6 @@
                 });
             },
 
-            // --- Meeting Logic ---
             toggleRecording: async () => {
                 const btn = document.getElementById('record-btn');
                 const textDiv = document.getElementById('meeting-text');
