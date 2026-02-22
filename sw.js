@@ -1,5 +1,4 @@
-// 修改版本號至 v3 以強制手機瀏覽器更新快取
-const CACHE_NAME = 'dsb-v-final-v3'; 
+const CACHE_NAME = 'dsb-v-final-v4'; 
 
 const ASSETS = [
   './index.html',
