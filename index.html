@@ -64,11 +64,7 @@
         .detail-content { font-size: 0.95rem; line-height: 1.5; color: var(--text-main); }
         .unknown-data { color: var(--danger); font-style: italic; }
         
-        /* 儲存後的關鍵字樣式 (Annotation) */
-        .ai-note-link { 
-            border-bottom: 2px solid var(--teal); cursor: pointer; color: var(--teal); font-weight: 500;
-            text-decoration: none; transition: background 0.2s;
-        }
+        .ai-note-link { border-bottom: 2px solid var(--teal); cursor: pointer; color: var(--teal); font-weight: 500; text-decoration: none; transition: background 0.2s; }
         .ai-note-link:hover { background: var(--teal-light); }
 
         .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card-bg); display: flex; justify-content: space-around; padding: 12px 0; border-top: 1px solid var(--border); z-index: 100; }
@@ -88,24 +84,16 @@
 
         #mermaid-container { width: 100%; min-height: 200px; overflow-x: auto; background: white; padding: 10px; border-radius: 8px; display: flex; justify-content: center; align-items: center; }
 
-        /* 浮動選字工具列 */
-        #selection-toolbar {
-            position: absolute; display: none; background: var(--text-main); color: white;
-            border-radius: 8px; padding: 5px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            white-space: nowrap; transform: translateX(-50%);
-        }
+        #selection-toolbar { position: absolute; display: none; background: var(--text-main); color: white; border-radius: 8px; padding: 5px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.3); white-space: nowrap; transform: translateX(-50%); }
         #selection-toolbar button { background: transparent; color: white; border: none; padding: 5px 10px; cursor: pointer; font-size: 0.9rem;}
         #selection-toolbar button:first-child { border-right: 1px solid #555; }
 
-        /* AI 查詢結果彈窗 */
         #ai-result-modal { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:90%; max-width:400px; background: var(--card-bg); z-index:9999; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border-radius: 12px; padding: 20px; max-height: 80vh; overflow-y: auto; }
         #global-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9998; backdrop-filter: blur(2px); }
 
-        /* Custom Alert/Confirm */
         .custom-modal { display:none; position:fixed; top:50%; left:50%; width:85%; max-width:320px; z-index:9999; box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align:center; margin:0; padding: 20px; animation: popInCenter 0.3s forwards; }
         @keyframes popInCenter { 0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 
-        /* Loading Animation */
         #page-loading { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: var(--bg-color); }
         #page-loading.active { display: flex; }
         .loading-title { color: var(--text-main); font-weight: 300; letter-spacing: 2px; font-size: 1.8rem; margin-top: 30px; text-align: center;}
@@ -277,9 +265,9 @@
     <div id="context-menu-overlay" onclick="app.hideContextMenu()">
         <div class="action-sheet" onclick="event.stopPropagation()">
             <h3 id="context-title" style="margin-top:0; text-align:center; color:var(--text-sub);">Manage</h3>
-            <button class="action-btn" onclick="app.editPatient()">Edit</button>
-            <button class="action-btn" onclick="app.archivePatient()">📂 Archive</button>
-            <button class="action-btn" style="color: var(--danger);" onclick="app.dischargePatient()">❌ Discharge</button>
+            <button class="action-btn" onclick="app.editPatient()">✏️ Edit (編輯內容)</button>
+            <button class="action-btn" onclick="app.archivePatient()">📂 Archive (典藏並移出病房)</button>
+            <button class="action-btn" style="color: var(--danger);" onclick="app.dischargePatient()">❌ Discharge (永久刪除)</button>
             <button class="action-btn" onclick="app.hideContextMenu()">Cancel</button>
         </div>
     </div>
@@ -292,6 +280,19 @@
         <label>Raw Data</label><textarea id="new-raw" rows="4"></textarea>
         <label>Image</label><input type="file" id="new-image" accept="image/*">
         <div style="text-align:right; margin-top: 15px;"><button class="btn btn-outline" onclick="app.hideModal('modal-add-patient')">Cancel</button> <button class="btn" onclick="app.addPatient()">Save & Process</button></div>
+    </div>
+
+    <div id="modal-edit-patient" class="card" style="display:none; position:fixed; top:5%; left:5%; right:5%; z-index:200; box-shadow: 0 0 50px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto;">
+        <h3 style="color:var(--teal)">Edit Patient</h3>
+        <label>Bed No.</label><input type="text" id="edit-bed">
+        <label>Name</label><input type="text" id="edit-name">
+        <label>Diagnosis</label><input type="text" id="edit-diagnosis">
+        <label>Course Summary</label><textarea id="edit-course" rows="3"></textarea>
+        <label>Medications</label><input type="text" id="edit-meds">
+        <div style="text-align:right; margin-top: 15px;">
+            <button class="btn btn-outline" onclick="app.hideModal('modal-edit-patient')">Cancel</button> 
+            <button class="btn" onclick="app.saveEditPatient()">💾 Save</button>
+        </div>
     </div>
     
     <div id="modal-add-ward" class="card" style="display:none; position:fixed; top:30%; left:10%; right:10%; z-index:200; box-shadow: 0 0 50px rgba(0,0,0,0.5);">
@@ -322,7 +323,6 @@
                 document.getElementById('global-overlay').style.display = 'none';
                 document.querySelectorAll('.custom-modal, #ai-result-modal').forEach(el => el.style.display = 'none');
                 app.confirmCallback = null;
-                // 隱藏選字工具
                 document.getElementById('selection-toolbar').style.display = 'none';
             },
             confirmCallback: null,
@@ -343,7 +343,6 @@
                 if (Math.random() > 0.5) document.getElementById('anim-type-1').style.display = 'block';
                 else document.getElementById('anim-type-2').style.display = 'flex';
 
-                // 選字監聽
                 document.addEventListener('selectionchange', app.handleSelectionChange);
 
                 const localData = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
@@ -354,21 +353,15 @@
                 }
             },
 
-            // --- 全域選字功能 ---
             handleSelectionChange: () => {
                 const selection = window.getSelection();
                 const toolbar = document.getElementById('selection-toolbar');
                 
                 if (selection.isCollapsed || selection.toString().trim().length < 2) {
-                    toolbar.style.display = 'none';
-                    return;
+                    toolbar.style.display = 'none'; return;
                 }
-
-                // 檢查是否在允許的區域 (會議或病歷詳情)
                 const anchorNode = selection.anchorNode.parentElement;
-                if (!anchorNode.closest('.selectable-area') && !anchorNode.closest('.detail-content')) {
-                    return;
-                }
+                if (!anchorNode.closest('.selectable-area') && !anchorNode.closest('.detail-content')) return;
 
                 selectedTextString = selection.toString().trim();
                 selectionRange = selection.getRangeAt(0);
@@ -378,16 +371,13 @@
                 toolbar.style.top = `${rect.top + window.scrollY - 40}px`;
                 toolbar.style.left = `${rect.left + (rect.width / 2)}px`;
             },
-
             webSearchSelected: () => {
                 window.open(`https://www.google.com/search?q=${encodeURIComponent(selectedTextString)}`, '_blank');
-                app.closeAllModals(); // Hide toolbar
+                app.closeAllModals(); 
             },
-
             aiLookupSelected: async () => {
                 if (!app.state.keys.text) return app.showAlert("請先設定 Text AI Key");
                 
-                // Show modal with loading
                 document.getElementById('global-overlay').style.display = 'block';
                 const modal = document.getElementById('ai-result-modal');
                 modal.style.display = 'block';
@@ -405,36 +395,24 @@
                     const aiText = result.candidates[0].content.parts[0].text;
                     
                     document.getElementById('ai-result-content').innerText = aiText;
-                    // Show Save button only if in Detail View (Editable context)
                     if (document.getElementById('page-patient-detail').classList.contains('active')) {
                         document.getElementById('btn-save-annotation').style.display = 'block';
                         document.getElementById('btn-save-annotation').dataset.note = aiText;
                     }
-                } catch(e) {
-                    document.getElementById('ai-result-content').innerText = "Error: " + e.message;
-                }
+                } catch(e) { document.getElementById('ai-result-content').innerText = "Error: " + e.message; }
             },
-
             saveAnnotation: () => {
-                // This replaces the text with a styled span that acts as a hyperlink
                 if (!selectionRange) return;
-                
                 const note = document.getElementById('btn-save-annotation').dataset.note;
                 const span = document.createElement('span');
                 span.className = 'ai-note-link';
                 span.innerText = selectedTextString;
-                span.title = note; // Simple tooltip
-                span.onclick = (e) => {
-                    e.stopPropagation();
-                    app.showAlert(note, selectedTextString); // Click to show note again
-                };
+                span.title = note; 
+                span.onclick = (e) => { e.stopPropagation(); app.showAlert(note, selectedTextString); };
 
                 selectionRange.deleteContents();
                 selectionRange.insertNode(span);
-                
                 app.closeAllModals();
-                // Note: Real persistence requires saving the updated innerHTML back to Supabase
-                // Currently only visual in session
             },
 
             showLoginPage: () => {
@@ -445,7 +423,6 @@
                 if(localData.supabaseUrl) document.getElementById('supabase-url').value = localData.supabaseUrl;
                 if(localData.supabaseKey) document.getElementById('supabase-key').value = localData.supabaseKey;
             },
-
             initSupabase: async (url, key) => {
                 try {
                     supabaseClient = window.supabase.createClient(url, key);
@@ -454,7 +431,6 @@
                     else app.showLoginPage();
                 } catch(e) { app.showLoginPage(); }
             },
-
             login: async () => {
                 const url = document.getElementById('supabase-url').value;
                 const key = document.getElementById('supabase-key').value;
@@ -469,7 +445,6 @@
                     if(sError) app.showAlert(sError.message); else app.showAlert('註冊成功！請檢查 Email。');
                 } else app.onLoginSuccess(data.user);
             },
-
             onLoginSuccess: async (user) => {
                 currentUser = user;
                 document.getElementById('page-loading').classList.remove('active');
@@ -479,14 +454,12 @@
                 app.loadWards();
                 app.navTo('page-wards');
             },
-            
             logout: async () => { 
                 app.showConfirm('確定要登出嗎？', async () => {
                     if(supabaseClient) await supabaseClient.auth.signOut(); 
                     localStorage.removeItem(DB_KEY); location.reload(); 
-                }, '登出確認');
+                });
             },
-
             loadSettings: async () => {
                 if(!currentUser) return;
                 const { data } = await supabaseClient.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle();
@@ -502,7 +475,6 @@
                     if(document.getElementById('prompt-selection')) app.state.selectionPrompt = document.getElementById('prompt-selection').value;
                 }
             },
-
             saveSettings: async () => {
                 const textKey = document.getElementById('key-text').value;
                 const voiceKey = document.getElementById('key-voice').value;
@@ -595,6 +567,53 @@
                 } else app.processPatientData(data.id, rawText, null);
                 document.getElementById('new-bed').value = ''; document.getElementById('new-raw').value = ''; fileInput.value = '';
             },
+
+            // --- ✅ 編輯病人功能 ---
+            editPatient: () => {
+                app.hideContextMenu();
+                if (!selectedPatientData) return;
+                const p = selectedPatientData;
+                const md = p.medical_data || {};
+                const basic = p.basic_info || {};
+                
+                document.getElementById('edit-bed').value = p.bed_no || '';
+                document.getElementById('edit-name').value = basic.name || '';
+                document.getElementById('edit-diagnosis').value = md.diagnosis || '';
+                document.getElementById('edit-course').value = md.course || '';
+                document.getElementById('edit-meds').value = md.medications || '';
+                
+                app.showModal('modal-edit-patient');
+            },
+            saveEditPatient: async () => {
+                const bed = document.getElementById('edit-bed').value;
+                const name = document.getElementById('edit-name').value;
+                const diag = document.getElementById('edit-diagnosis').value;
+                const course = document.getElementById('edit-course').value;
+                const meds = document.getElementById('edit-meds').value;
+                
+                if(!bed) return app.showAlert('Bed No. 為必填');
+                app.hideModal('modal-edit-patient');
+
+                // 更新既有的 JSON 資料
+                let newMd = selectedPatientData.medical_data || {};
+                newMd.diagnosis = diag;
+                newMd.course = course;
+                newMd.medications = meds;
+                
+                let newBasic = selectedPatientData.basic_info || {};
+                newBasic.name = name;
+
+                const { error } = await supabaseClient.from('patients').update({ 
+                    bed_no: bed, 
+                    basic_info: newBasic,
+                    medical_data: newMd,
+                    updated_at: new Date()
+                }).eq('id', selectedPatientId);
+                
+                if (error) app.showAlert("更新失敗: " + error.message);
+                app.loadPatients();
+            },
+
             processPatientData: async (patientId, text, imageBase64) => {
                 if (!app.state.keys.text) return app.showAlert('請設定 Text AI Key');
                 const prompt = `分析臨床筆記，回傳純JSON：{"diagnosis":"主診斷","underlying":["病史"],"course":"病程Markdown","medications":"用藥","goal":"目標","todos":["待辦"],"ddx":"鑑別","critical":"過敏DNR"}`;
@@ -617,22 +636,70 @@
             cancelLongPress: () => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } },
             showContextMenu: () => { if(navigator.vibrate) navigator.vibrate(50); document.getElementById('context-menu-overlay').style.display = 'flex'; },
             hideContextMenu: () => { document.getElementById('context-menu-overlay').style.display = 'none'; selectedPatientId = null; },
-            editPatient: () => { app.showAlert('Feature coming soon!', 'Edit'); app.hideContextMenu(); },
+            
             archivePatient: () => {
-                app.showConfirm('典藏並移出病房？', async () => {
-                    await supabaseClient.from('archives').insert({ user_id: currentUser.id, title: selectedPatientData.bed_no, content: selectedPatientData.medical_data });
-                    await supabaseClient.from('patients').delete().eq('id', selectedPatientId);
-                    app.loadPatients(); app.hideContextMenu();
+                app.showConfirm('典藏此病歷並移出病房？', async () => {
+                    try {
+                        const { error } = await supabaseClient.from('archives').insert({ 
+                            user_id: currentUser.id, 
+                            title: `${selectedPatientData.bed_no} - ${selectedPatientData.medical_data?.diagnosis || 'No Dx'}`, 
+                            content: selectedPatientData // ✅ 存入完整的物件結構，以便日後完美還原
+                        });
+                        if (error) throw error;
+                        await supabaseClient.from('patients').delete().eq('id', selectedPatientId);
+                        app.loadPatients(); app.hideContextMenu();
+                        app.showAlert("典藏成功！");
+                    } catch(err) {
+                        app.showAlert("典藏失敗。請確認您已執行 ALTER TABLE archives ADD COLUMN content jsonb 語法。\n錯誤: " + err.message);
+                    }
                 });
             },
+            
             dischargePatient: () => { app.showConfirm('永久刪除資料？', async () => { await supabaseClient.from('patients').delete().eq('id', selectedPatientId); app.loadPatients(); app.hideContextMenu(); }); },
+            
             loadArchives: async () => {
                 const { data } = await supabaseClient.from('archives').select('*').order('created_at', { ascending: false });
                 const list = document.getElementById('archives-list'); list.innerHTML = '';
-                if(data) data.forEach(arc => list.innerHTML += `<div class="card"><h3>${arc.title}</h3><p style="color:var(--text-sub); font-size:0.8rem">${new Date(arc.created_at).toLocaleDateString()}</p></div>`);
+                if(data) data.forEach(arc => {
+                    // ✅ 新增還原 (Restore) 按鈕
+                    const div = document.createElement('div');
+                    div.className = 'card';
+                    div.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <h3 style="margin:0;">${arc.title}</h3>
+                                <p style="color:var(--text-sub); font-size:0.8rem; margin:5px 0 0 0;">${new Date(arc.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <button class="btn btn-sm btn-outline" onclick="app.restoreArchive('${arc.id}')">🔙 還原</button>
+                        </div>
+                    `;
+                    list.appendChild(div);
+                });
             },
 
-            // --- 5. 會議精靈 (時光切片 & 長檔上傳) ---
+            restoreArchive: async (archiveId) => {
+                if(!currentWardId) return app.showAlert("請先進入要還原的目標病房，再點擊 Archives 進行還原。");
+                app.showConfirm('將此病歷還原至目前的病房中？', async () => {
+                    const { data: arc } = await supabaseClient.from('archives').select('*').eq('id', archiveId).single();
+                    if (!arc || !arc.content) return app.showAlert("無法讀取舊版典藏資料格式。");
+                    
+                    const p = arc.content;
+                    const { error } = await supabaseClient.from('patients').insert({
+                        ward_id: currentWardId,
+                        bed_no: p.bed_no || 'Res',
+                        basic_info: p.basic_info || {},
+                        medical_data: p.medical_data || {},
+                        status: 'done'
+                    });
+                    
+                    if (error) return app.showAlert("還原失敗: " + error.message);
+                    await supabaseClient.from('archives').delete().eq('id', archiveId);
+                    app.loadArchives();
+                    app.showAlert("病歷已成功還原！");
+                });
+            },
+
+            // --- ✅ 5. 修正：會議精靈 (長檔上傳冷卻機制) ---
             toggleRecording: async () => {
                 const btn = document.getElementById('record-btn');
                 const textDiv = document.getElementById('meeting-text');
@@ -644,14 +711,13 @@
                         textDiv.innerHTML = '<p style="color:var(--danger);">🔴 Recording... (每60秒自動分析)</p>';
                         btn.innerText = '⏹ Stop'; btn.classList.add('btn-outline');
 
-                        // 切片邏輯
                         mediaRecorder.ondataavailable = async (e) => {
                             if (e.data.size > 0) {
-                                const blob = new Blob([e.data], { type: 'audio/mp4' }); // iOS 錄音通常可視為 mp4/aac
-                                app.processAudioAI(blob, true); // true = append mode
+                                const blob = new Blob([e.data], { type: 'audio/mp4' }); 
+                                app.processAudioAI(blob, true); 
                             }
                         };
-                        mediaRecorder.start(60000); // 60秒切一次
+                        mediaRecorder.start(60000); 
                     } catch (err) { app.showAlert('麥克風錯誤: ' + err.message); }
                 } else {
                     if (mediaRecorder) { mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t=>t.stop()); }
@@ -666,16 +732,25 @@
                 app.meetingContext = ""; 
                 document.getElementById('meeting-text').innerHTML = `<p>📂 處理檔案中: ${file.name}</p>`;
                 
-                // 長檔切片邏輯 (每 5MB 切一段，避免 API 超限)
-                const CHUNK_SIZE = 5 * 1024 * 1024; 
+                // 擴大 Chunk 體積至 8MB，減少請求總次數
+                const CHUNK_SIZE = 8 * 1024 * 1024; 
                 let offset = 0;
                 let chunkIndex = 0;
+                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
                 
-                // 讀取並分段傳送
                 while(offset < file.size) {
+                    // 若這不是第一個 Chunk，則強制冷卻 15 秒，以避開免費額度 5 RPM 的限制
+                    if (chunkIndex > 0) {
+                        document.getElementById('meeting-text').innerHTML += `<p style="color:var(--primary);">⏳ [避免 API 限制] 系統冷卻 15 秒後，再分析下一段音檔...</p>`;
+                        document.getElementById('meeting-text').scrollTop = document.getElementById('meeting-text').scrollHeight;
+                        await new Promise(r => setTimeout(r, 15000));
+                    }
+
                     const chunk = file.slice(offset, offset + CHUNK_SIZE);
-                    document.getElementById('meeting-text').innerHTML += `<p>Processing part ${chunkIndex+1}...</p>`;
-                    await app.processAudioAI(chunk, true); // true = append context
+                    document.getElementById('meeting-text').innerHTML += `<p>🚀 正在分析第 ${chunkIndex+1}/${totalChunks} 段音訊...</p>`;
+                    document.getElementById('meeting-text').scrollTop = document.getElementById('meeting-text').scrollHeight;
+                    
+                    await app.processAudioAI(chunk, true); 
                     offset += CHUNK_SIZE;
                     chunkIndex++;
                 }
@@ -687,12 +762,10 @@
                 if (!app.state.keys.voice) return;
                 const modelName = app.state.models.voice || 'gemini-1.5-flash';
                 
-                // 將 Blob 轉 Base64
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
                     const base64Audio = reader.result.split(',')[1];
-                    // 根據瀏覽器/檔案判斷 MIME
                     let mimeType = audioBlob.type || 'audio/mp4';
                     if(!mimeType || mimeType === '') mimeType = 'audio/mp4'; 
                     if(mimeType.includes(';')) mimeType = mimeType.split(';')[0];
@@ -719,11 +792,11 @@
                         aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
                         const aiJson = JSON.parse(aiText);
                         
-                        app.meetingContext = aiJson.summary; // 更新 Rolling Context
+                        app.meetingContext = aiJson.summary; 
                         
                         const textDiv = document.getElementById('meeting-text');
-                        textDiv.innerHTML = `
-                            <div style="padding:10px; background:var(--bg-color); border-radius:8px;">
+                        textDiv.innerHTML += `
+                            <div style="padding:10px; background:var(--bg-color); border-radius:8px; margin-top:8px;">
                                 <strong>Context Updated:</strong><br>${marked.parse(aiJson.summary)}
                             </div>`;
                         textDiv.scrollTop = textDiv.scrollHeight;
