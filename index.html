@@ -55,7 +55,7 @@
 
         .container { max-width: 800px; margin: 0 auto; padding: 16px; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header h1 { font-size: 1.5rem; margin: 0; }
+        .header h1 { font-size: 1.5rem; margin: 0; color: var(--text-main); }
         
         .header-btn-group { display: flex; gap: 8px; }
 
@@ -68,13 +68,14 @@
             border: 1px solid var(--border);
             transition: transform 0.1s;
         }
-        .card:active { transform: scale(0.98); }
+        .patient-card:active { transform: scale(0.98); }
 
         .btn {
             background: var(--primary); color: #333; border: none; padding: 8px 16px;
             border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
         }
         .btn-outline { background: transparent; border: 1px solid var(--text-sub); color: var(--text-main); }
+        .btn-danger { background: var(--danger); color: white; border: none; }
         .btn-sm { padding: 4px 10px; font-size: 0.85rem; }
 
         input, textarea {
@@ -96,7 +97,7 @@
         /* Detail View Styles */
         .detail-section { margin-bottom: 15px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
         .detail-title { font-size: 0.9rem; color: var(--teal); font-weight: bold; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .detail-content { font-size: 0.95rem; line-height: 1.5; }
+        .detail-content { font-size: 0.95rem; line-height: 1.5; color: var(--text-main); }
         .unknown-data { color: var(--danger); font-style: italic; }
         .todo-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 
@@ -115,7 +116,7 @@
         .page { display: none; }
         .page.active { display: block; }
 
-        /* Context Menu */
+        /* Context Menu Action Sheet */
         #context-menu-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0,0,0,0.5); z-index: 300; display: none;
@@ -140,9 +141,38 @@
             background: white; padding: 10px; border-radius: 8px;
             display: flex; justify-content: center; align-items: center;
         }
+
+        /* --- 客製化彈窗 (Custom Modals) --- */
+        #global-overlay {
+            display:none; position:fixed; top:0; left:0; right:0; bottom:0; 
+            background:rgba(0,0,0,0.5); z-index:9998; backdrop-filter: blur(2px);
+        }
+        
+        .custom-modal {
+            display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); 
+            width:85%; max-width:320px; z-index:9999; box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+            text-align:center; margin:0; padding: 20px; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
     </style>
 </head>
 <body>
+
+    <div id="global-overlay" onclick="app.closeAlert(); app.closeConfirm(false);"></div>
+    
+    <div id="custom-alert" class="card custom-modal">
+        <h3 id="alert-title" style="margin-top:0; color:var(--teal);">提示</h3>
+        <p id="alert-message" style="color:var(--text-sub); font-size:0.95rem; margin-bottom:20px; line-height: 1.5;"></p>
+        <button class="btn" style="width:100%; justify-content:center;" onclick="app.closeAlert()">確定</button>
+    </div>
+
+    <div id="custom-confirm" class="card custom-modal">
+        <h3 id="confirm-title" style="margin-top:0; color:var(--danger);">確認操作</h3>
+        <p id="confirm-message" style="color:var(--text-sub); font-size:0.95rem; margin-bottom:20px; line-height: 1.5;"></p>
+        <div style="display:flex; gap:10px;">
+            <button class="btn btn-outline" style="flex:1; justify-content:center;" onclick="app.closeConfirm(false)">取消</button>
+            <button class="btn btn-danger" style="flex:1; justify-content:center;" onclick="app.closeConfirm(true)">確定</button>
+        </div>
+    </div>
 
     <div class="container">
         <div id="page-login" class="page active">
@@ -186,7 +216,7 @@
         <div id="page-patient-detail" class="page">
             <div class="header">
                 <button class="btn btn-outline" onclick="app.closePatientDetail()">⬅ Back</button>
-                <h2 id="detail-bed-no" style="margin:0">Bed</h2>
+                <h2 id="detail-bed-no" style="margin:0; color:var(--text-main);">Bed</h2>
                 <button class="btn" style="visibility: hidden;">Save</button>
             </div>
             <div id="detail-content-area" style="padding-bottom: 100px;"></div>
@@ -288,7 +318,7 @@
         const DB_KEY = 'dsb_local_config';
         let supabaseClient = null, currentUser = null, currentWardId = null;
         let longPressTimer = null, selectedPatientId = null, selectedPatientData = null;
-        let mediaRecorder = null; // 恢復變數
+        let mediaRecorder = null; 
 
         mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
 
@@ -298,13 +328,38 @@
                 models: { text: 'gemini-2.0-flash', voice: 'gemini-1.5-flash' }
             },
 
+            // --- 客製化彈窗邏輯 ---
+            showAlert: (msg, title="提示") => {
+                document.getElementById('alert-title').innerText = title;
+                document.getElementById('alert-message').innerText = msg;
+                document.getElementById('global-overlay').style.display = 'block';
+                document.getElementById('custom-alert').style.display = 'block';
+            },
+            closeAlert: () => {
+                document.getElementById('global-overlay').style.display = 'none';
+                document.getElementById('custom-alert').style.display = 'none';
+            },
+            confirmCallback: null,
+            showConfirm: (msg, callback, title="確認操作") => {
+                document.getElementById('confirm-title').innerText = title;
+                document.getElementById('confirm-message').innerText = msg;
+                app.confirmCallback = callback;
+                document.getElementById('global-overlay').style.display = 'block';
+                document.getElementById('custom-confirm').style.display = 'block';
+            },
+            closeConfirm: (result) => {
+                document.getElementById('global-overlay').style.display = 'none';
+                document.getElementById('custom-confirm').style.display = 'none';
+                if (result && app.confirmCallback) app.confirmCallback();
+                app.confirmCallback = null;
+            },
+
             init: async () => {
                 const localData = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
                 if (localData.supabaseUrl && localData.supabaseKey) app.initSupabase(localData.supabaseUrl, localData.supabaseKey);
                 
                 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
                 
-                // 延遲載入 Mermaid 避免初始化報錯
                 setTimeout(() => { if(document.getElementById('page-meeting').classList.contains('active')) app.renderMermaid(`graph TD; A[Ready] --> B[Start];`); }, 1500);
             },
 
@@ -325,13 +380,16 @@
                 const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
 
+                if (!url || !key) return app.showAlert('請填寫 Supabase URL 與 Key', '連線錯誤');
+
                 localStorage.setItem(DB_KEY, JSON.stringify({ supabaseUrl: url, supabaseKey: key }));
                 app.initSupabase(url, key); 
 
                 const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                 if(error) {
                     const { error: sError } = await supabaseClient.auth.signUp({ email, password });
-                    if(sError) alert(sError.message); else alert('Signup OK. Login again.');
+                    if(sError) app.showAlert(sError.message, '登入/註冊失敗'); 
+                    else app.showAlert('註冊成功！請檢查 Email 或重新登入。', '註冊成功');
                 } else app.onLoginSuccess(data.user);
             },
 
@@ -345,25 +403,33 @@
                 currentUser = user;
                 document.getElementById('page-login').classList.remove('active');
                 document.getElementById('main-nav').style.display = 'flex';
-                app.navTo('page-wards');
-                app.loadSettings();
+                await app.loadSettings();
                 app.loadWards();
+                app.navTo('page-wards');
             },
             
-            logout: async () => { if(supabaseClient) await supabaseClient.auth.signOut(); location.reload(); },
+            logout: async () => { 
+                app.showConfirm('確定要登出嗎？', async () => {
+                    if(supabaseClient) await supabaseClient.auth.signOut(); 
+                    location.reload(); 
+                }, '登出確認');
+            },
 
             loadSettings: async () => {
                 if(!currentUser) return;
-                const { data } = await supabaseClient.from('user_settings').select('*').eq('user_id', currentUser.id).single();
+                // 改用 maybeSingle() 防止新帳號初次登入時出現 406 Error 導致中斷
+                const { data, error } = await supabaseClient.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle();
+                
                 if (data) {
                     document.getElementById('key-text').value = data.gemini_key_text || '';
                     document.getElementById('key-voice').value = data.gemini_key_voice || '';
                     document.getElementById('model-text').value = data.model_text || 'gemini-2.0-flash';
                     document.getElementById('model-voice').value = data.model_voice || 'gemini-1.5-flash';
-                    app.state.keys.text = data.gemini_key_text;
-                    app.state.keys.voice = data.gemini_key_voice;
-                    app.state.models.text = data.model_text;
-                    app.state.models.voice = data.model_voice;
+                    
+                    app.state.keys.text = data.gemini_key_text || '';
+                    app.state.keys.voice = data.gemini_key_voice || '';
+                    app.state.models.text = data.model_text || 'gemini-2.0-flash';
+                    app.state.models.voice = data.model_voice || 'gemini-1.5-flash';
                 }
             },
 
@@ -388,9 +454,9 @@
                     app.state.keys.voice = voiceKey;
                     app.state.models.text = textModel;
                     app.state.models.voice = voiceModel;
-                    alert('✅ Settings Saved!');
+                    app.showAlert('設定已成功儲存並同步至雲端！', '儲存成功');
                 } else {
-                    alert('Error: ' + error.message);
+                    app.showAlert('儲存失敗: ' + error.message, '錯誤');
                 }
             },
 
@@ -400,10 +466,11 @@
                 document.getElementById(pageId).classList.add('active');
                 document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
                 
+                if(pageId === 'page-archives') app.loadArchives(); 
+                
                 if(pageId.includes('ward') || pageId.includes('patients') || pageId.includes('detail') || pageId.includes('archive')) document.getElementById('nav-wards').classList.add('active');
                 else if(pageId.includes('meeting')) {
                     document.getElementById('nav-meeting').classList.add('active');
-                    // 延遲重繪圖表，解決 offsetParent 為 null 的問題
                     setTimeout(() => {
                          const code = document.getElementById('mermaid-container').getAttribute('data-code') || `graph TD; A[Ready] --> B[Start];`;
                          app.renderMermaid(code);
@@ -414,20 +481,21 @@
 
             // --- Ward & Patient Logic ---
             loadWards: async () => {
-                const { data } = await supabaseClient.from('wards').select('*');
+                const { data } = await supabaseClient.from('wards').select('*').order('created_at', { ascending: true });
                 const list = document.getElementById('wards-list');
                 list.innerHTML = '';
                 if(data) data.forEach(w => list.innerHTML += `<div class="card"><h3>${w.name}</h3><button class="btn btn-outline" onclick="app.openWard('${w.id}','${w.name}')">Enter</button></div>`);
             },
             addWard: async () => {
                 const name = document.getElementById('new-ward-name').value;
+                if(!name) return app.showAlert('請輸入病房名稱');
                 app.hideModal('modal-add-ward');
                 await supabaseClient.from('wards').insert({ user_id: currentUser.id, name });
                 app.loadWards();
+                document.getElementById('new-ward-name').value = '';
             },
             openWard: (id, name) => { currentWardId = id; document.getElementById('current-ward-name').innerText = name; app.navTo('page-patients'); app.loadPatients(); },
             
-            // --- Patient List Logic (Updated Done Status) ---
             loadPatients: async () => {
                 let { data } = await supabaseClient.from('patients').select('*').eq('ward_id', currentWardId);
                 const list = document.getElementById('patients-list');
@@ -439,7 +507,6 @@
                     const md = p.medical_data || {};
                     const isProcessing = p.status === 'processing';
                     
-                    // Done Status Logic: Show only if updated within 10 minutes AND status is 'done'
                     let showDone = false;
                     if (p.status === 'done') {
                         const updatedTime = new Date(p.updated_at);
@@ -452,11 +519,11 @@
                     div.className = 'card patient-card';
                     div.innerHTML = `
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div><span class="bed-badge">${p.bed_no}</span> <b>${md.diagnosis || (isProcessing ? 'Analyzing...' : '<Unknown>')}</b></div>
+                            <div><span class="bed-badge">${p.bed_no}</span> <b style="color:var(--text-main);">${md.diagnosis || (isProcessing ? 'Analyzing...' : '<Unknown>')}</b></div>
                             ${showDone ? '<div class="status-done">✅ Done</div>' : ''}
                             ${isProcessing ? '<div class="status-processing">Processing</div>' : ''}
                         </div>
-                        <div style="font-size:0.85rem; color:var(--text-sub); margin-top:5px;">${md.course ? md.course.substring(0,60)+'...' : ''}</div>
+                        <div style="font-size:0.85rem; color:var(--text-sub); margin-top:5px; line-height: 1.4;">${md.course ? md.course.substring(0,60)+'...' : ''}</div>
                     `;
                     
                     div.addEventListener('touchstart', (e) => app.startLongPress(e, p));
@@ -471,14 +538,12 @@
                 });
             },
 
-            // --- Detail View Logic (Clears Done Status) ---
             openPatientDetail: async (p) => {
                 app.navTo('page-patient-detail');
                 const md = p.medical_data || {};
                 const basic = p.basic_info || {};
                 document.getElementById('detail-bed-no').innerText = `${p.bed_no} ${basic.name || ''}`;
                 
-                // Clear "Done" status (Set to 'read')
                 if (p.status === 'done') {
                     await supabaseClient.from('patients').update({ status: 'read' }).eq('id', p.id);
                 }
@@ -513,7 +578,6 @@
                 app.loadPatients(); 
             },
 
-            // --- Add Patient & AI ---
             addPatient: async () => {
                 const bed = document.getElementById('new-bed').value;
                 const name = document.getElementById('new-name').value;
@@ -521,7 +585,7 @@
                 const rawText = document.getElementById('new-raw').value;
                 const fileInput = document.getElementById('new-image');
                 
-                if(!bed) return alert('Bed No. is required');
+                if(!bed) return app.showAlert('Bed No. (床號) 為必填欄位', '資料不全');
                 app.hideModal('modal-add-patient');
 
                 const { data, error } = await supabaseClient.from('patients').insert({
@@ -531,7 +595,7 @@
                     status: 'processing'
                 }).select().single();
                 
-                if(error) return alert(error.message);
+                if(error) return app.showAlert(error.message, '建立失敗');
                 app.loadPatients();
 
                 let base64Image = null;
@@ -553,8 +617,11 @@
             },
 
             processPatientData: async (patientId, text, imageBase64) => {
-                if (!app.state.keys.text) return;
-                const modelName = app.state.models.text;
+                if (!app.state.keys.text) {
+                    await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
+                    return app.showAlert('尚未設定 Text AI Key，無法處理病歷。請至 Settings 設定。', 'AI 錯誤');
+                }
+                const modelName = app.state.models.text || 'gemini-2.0-flash';
 
                 const systemPrompt = `You are a professional clinical assistant. Analyze the provided clinical notes (text or image). 
                 Extract and structure the data into the following JSON format. 
@@ -583,7 +650,7 @@
                     });
                     
                     const result = await response.json();
-                    if (!result.candidates) throw new Error('AI No Response');
+                    if (!result.candidates) throw new Error(result.error?.message || 'AI No Response');
                     
                     const aiText = result.candidates[0].content.parts[0].text;
                     const jsonStr = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -593,7 +660,7 @@
                         medical_data: aiJson,
                         raw_data: null, 
                         status: 'done',
-                        updated_at: new Date() // Update time for Done logic
+                        updated_at: new Date() 
                     }).eq('id', patientId);
                     
                     app.loadPatients();
@@ -601,13 +668,14 @@
                 } catch (e) {
                     console.error("AI Error", e);
                     await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
+                    app.showAlert('病歷解析失敗: ' + e.message, 'AI 處理錯誤');
                 }
             },
 
-            // --- Long Press & Archive Logic (Updated) ---
+            // --- Long Press & Archive Logic ---
             startLongPress: (e, patient) => {
                 selectedPatientId = patient.id;
-                selectedPatientData = patient; // Save full data for archive
+                selectedPatientData = patient; 
                 longPressTimer = setTimeout(() => {
                     document.getElementById('context-title').innerText = `Bed ${patient.bed_no}`;
                     app.showContextMenu();
@@ -626,48 +694,43 @@
                 selectedPatientId = null;
             },
             
-            // Actions
-            editPatient: () => { alert('Edit feature coming soon!'); app.hideContextMenu(); },
-            
-            // ✅ Archive Logic
-            archivePatient: async () => {
-                if (!selectedPatientData) return;
-                
-                const p = selectedPatientData;
-                const md = p.medical_data || {};
-                const basic = p.basic_info || {};
-                const title = `${p.bed_no} ${basic.name || ''} - ${md.diagnosis || 'No Dx'}`;
-                
-                // 1. Insert into Archives
-                const { error } = await supabaseClient.from('archives').insert({
-                    user_id: currentUser.id,
-                    title: title,
-                    summary_markdown: md.course || '',
-                    content: p.medical_data // Store full JSON
-                });
-                
-                if (error) {
-                    alert('Archive Failed: ' + error.message);
-                    return;
-                }
-
-                // 2. Delete from Patients
-                await supabaseClient.from('patients').delete().eq('id', selectedPatientId);
-                
-                app.loadPatients();
-                app.hideContextMenu();
-                alert('Patient archived successfully!');
+            editPatient: () => { 
+                app.showAlert('編輯功能即將推出！ (Feature coming soon)', 'Edit'); 
+                app.hideContextMenu(); 
             },
+            
+            archivePatient: () => {
+                app.showConfirm('確定要將此病歷典藏 (Archive) 嗎？資料將被移出病房。', async () => {
+                    if (!selectedPatientData) return;
+                    const p = selectedPatientData;
+                    const md = p.medical_data || {};
+                    const basic = p.basic_info || {};
+                    const title = `${p.bed_no} ${basic.name || ''} - ${md.diagnosis || 'No Dx'}`;
+                    
+                    const { error } = await supabaseClient.from('archives').insert({
+                        user_id: currentUser.id, title: title, summary_markdown: md.course || '', content: p.medical_data 
+                    });
+                    
+                    if (error) {
+                        app.showAlert('典藏失敗: ' + error.message, '錯誤');
+                        return;
+                    }
 
-            dischargePatient: async () => {
-                if(confirm('Permanently delete this patient?')) {
                     await supabaseClient.from('patients').delete().eq('id', selectedPatientId);
                     app.loadPatients();
-                }
-                app.hideContextMenu();
+                    app.hideContextMenu();
+                    app.showAlert('病歷已成功典藏！', '操作成功');
+                }, '典藏確認');
             },
 
-            // --- Archives View Logic ---
+            dischargePatient: () => {
+                app.showConfirm('永久刪除此病人資料？(此操作無法復原)', async () => {
+                    await supabaseClient.from('patients').delete().eq('id', selectedPatientId);
+                    app.loadPatients();
+                    app.hideContextMenu();
+                }, '刪除確認');
+            },
+
             loadArchives: async () => {
                 const { data } = await supabaseClient.from('archives').select('*').order('created_at', { ascending: false });
                 const list = document.getElementById('archives-list');
@@ -679,38 +742,16 @@
                     list.appendChild(div);
                 });
             },
-            
-            // Override navTo for archive lazy loading
-            navTo: (pageId) => {
-                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-                document.getElementById(pageId).classList.add('active');
-                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-                
-                if(pageId === 'page-archives') app.loadArchives(); // Load on visit
-                
-                if(pageId.includes('ward') || pageId.includes('patients') || pageId.includes('detail') || pageId.includes('archive')) document.getElementById('nav-wards').classList.add('active');
-                else if(pageId.includes('meeting')) {
-                    document.getElementById('nav-meeting').classList.add('active');
-                    setTimeout(() => {
-                         const code = document.getElementById('mermaid-container').getAttribute('data-code') || `graph TD; A[Ready] --> B[Start];`;
-                         app.renderMermaid(code);
-                    }, 300);
-                }
-                else if(pageId.includes('settings')) document.getElementById('nav-settings').classList.add('active');
-            },
 
-
-            // --- Meeting Logic (Restored) ---
+            // --- Meeting Logic ---
             toggleRecording: async () => {
                 const btn = document.getElementById('record-btn');
                 const textDiv = document.getElementById('meeting-text');
 
                 if (btn.innerText.includes('Start')) {
-                    // Start Recording Simulation (Real MediaRecorder requires HTTPS/Localhost and is complex for pure frontend without backend stream)
-                    // We will simulate the AI listening process
                     btn.innerText = '⏹ Stop';
                     btn.classList.add('btn-outline');
-                    textDiv.innerHTML = '<p>🔴 Recording started... (AI Listening)</p>';
+                    textDiv.innerHTML = '<p style="color:var(--danger);">🔴 Recording started... (AI Listening)</p>';
                     
                     app.meetingInterval = setInterval(() => {
                         const phrases = ["Discussing symptoms...", "Checking vital signs...", "Reviewing medications...", "Plan: Monitor closely."];
@@ -718,7 +759,6 @@
                         textDiv.innerHTML += `<p>• ${randomPhrase}</p>`;
                         textDiv.scrollTop = textDiv.scrollHeight;
                         
-                        // Update Mermaid
                         const graphs = [
                             `graph TD; A[Symptom] --> B{BP High?}; B--Yes-->C[Meds]; B--No-->D[Wait];`,
                             `graph LR; Start --> Triage --> Doctor --> Plan;`
@@ -730,7 +770,7 @@
                     btn.innerText = '🎙️ Start';
                     btn.classList.remove('btn-outline');
                     clearInterval(app.meetingInterval);
-                    textDiv.innerHTML += '<p>⏹ Recording stopped. Summary saved.</p>';
+                    textDiv.innerHTML += '<p style="color:var(--teal);">⏹ Recording stopped. Summary saved.</p>';
                 }
             },
 
@@ -739,11 +779,10 @@
                 if (!file) return;
                 
                 const textDiv = document.getElementById('meeting-text');
-                textDiv.innerHTML = `<p>📂 Processing file: <b>${file.name}</b>...</p>`;
+                textDiv.innerHTML = `<p>📂 Processing file: <b style="color:var(--text-main);">${file.name}</b>...</p>`;
                 
-                // Simulate processing delay
                 setTimeout(() => {
-                    textDiv.innerHTML += `<p>✅ Analysis Complete.</p>`;
+                    textDiv.innerHTML += `<p style="color:var(--teal);">✅ Analysis Complete.</p>`;
                     textDiv.innerHTML += `<p>• Found 3 key topics in audio.</p>`;
                     app.renderMermaid(`graph TD; AudioInput --> Analysis --> Result;`);
                 }, 1500);
@@ -751,10 +790,8 @@
                 input.value = ''; 
             },
 
-            // --- Utils ---
             renderMermaid: async (code) => {
                 const el = document.getElementById('mermaid-container');
-                // Defensive check: if element is hidden, don't render to avoid errors
                 if (!el || el.offsetParent === null || el.clientWidth === 0) return;
                 
                 el.removeAttribute('data-processed'); 
