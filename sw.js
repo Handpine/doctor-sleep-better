@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dsb-v-final-v4'; 
+const CACHE_NAME = 'dsb-v-final-v5'; 
 
 const ASSETS = [
   './index.html',
