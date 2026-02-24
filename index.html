@@ -40,8 +40,17 @@
         .header h1 { font-size: 1.5rem; margin: 0; color: var(--text-main); }
         .header-btn-group { display: flex; gap: 8px; }
 
-        .card { background: var(--card-bg); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); border: 1px solid var(--border); transition: transform 0.1s; position: relative;}
-        .patient-card:active { transform: scale(0.98); }
+        .card { 
+            background: var(--card-bg); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; 
+            box-shadow: var(--shadow); border: 1px solid var(--border); transition: transform 0.1s; position: relative;
+        }
+        
+        /* 🚫 禁用 iOS Safari 預設長按選字與放大鏡 (極度重要) */
+        .patient-card, .archive-card {
+            -webkit-user-select: none; user-select: none;
+            -webkit-touch-callout: none;
+        }
+        .patient-card:active, .archive-card:active { transform: scale(0.98); }
 
         .btn { background: var(--primary); color: #333; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
         .btn-outline { background: transparent; border: 1px solid var(--text-sub); color: var(--text-main); }
@@ -76,7 +85,7 @@
         .page { display: none; }
         .page.active { display: block; }
 
-        #context-menu-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 300; display: none; justify-content: center; align-items: flex-end; }
+        .action-sheet-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 300; display: none; justify-content: center; align-items: flex-end; }
         .action-sheet { background: var(--card-bg); width: 100%; max-width: 600px; border-radius: 16px 16px 0 0; padding: 20px; animation: slideUp 0.3s ease; }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .action-btn { width: 100%; padding: 15px; border: none; background: transparent; font-size: 1rem; text-align: center; color: var(--text-main); border-bottom: 1px solid var(--border); }
@@ -190,12 +199,14 @@
                 <button class="btn btn-outline" onclick="app.navTo('page-wards')">⬅ Back</button>
                 <h1>Archives</h1>
             </div>
+            <div style="font-size:0.8rem; color:var(--text-sub); text-align:center; margin-bottom:10px;">💡 點擊查看內容，長按還原至原病房</div>
             <div id="archives-list"></div>
         </div>
 
         <div id="page-patients" class="page">
             <div class="header">
-                <h1 id="current-ward-name">Ward</h1>
+                <button class="btn btn-outline btn-sm" onclick="app.navTo('page-wards')" style="margin-right: 10px;">⬅</button>
+                <h1 id="current-ward-name" style="flex:1;">Ward</h1>
                 <button class="btn" onclick="app.showModal('modal-add-patient')">➕ Add Pt</button>
             </div>
             <div id="patients-list"></div>
@@ -203,7 +214,7 @@
 
         <div id="page-patient-detail" class="page">
             <div class="header">
-                <button class="btn btn-outline" onclick="app.closePatientDetail()">⬅ Back</button>
+                <button class="btn btn-outline" id="btn-detail-back">⬅ Back</button>
                 <h2 id="detail-bed-no" style="margin:0; color:var(--text-main);">Bed</h2>
                 <button class="btn" style="visibility: hidden;">Save</button>
             </div>
@@ -262,13 +273,22 @@
         <div id="nav-settings" class="nav-item" onclick="app.navTo('page-settings')"><span class="nav-icon">⚙️</span> Settings</div>
     </nav>
 
-    <div id="context-menu-overlay" onclick="app.hideContextMenu()">
+    <div id="context-menu-overlay" class="action-sheet-overlay" onclick="app.hideContextMenu()">
         <div class="action-sheet" onclick="event.stopPropagation()">
-            <h3 id="context-title" style="margin-top:0; text-align:center; color:var(--text-sub);">Manage</h3>
+            <h3 id="context-title" style="margin-top:0; text-align:center; color:var(--text-sub);">Manage Patient</h3>
             <button class="action-btn" onclick="app.editPatient()">✏️ Edit (編輯內容)</button>
             <button class="action-btn" onclick="app.archivePatient()">📂 Archive (典藏並移出病房)</button>
             <button class="action-btn" style="color: var(--danger);" onclick="app.dischargePatient()">❌ Discharge (永久刪除)</button>
             <button class="action-btn" onclick="app.hideContextMenu()">Cancel</button>
+        </div>
+    </div>
+
+    <div id="archive-context-menu-overlay" class="action-sheet-overlay" onclick="app.hideArchiveContextMenu()">
+        <div class="action-sheet" onclick="event.stopPropagation()">
+            <h3 id="archive-context-title" style="margin-top:0; text-align:center; color:var(--text-sub);">Manage Archive</h3>
+            <button class="action-btn" style="color: var(--teal);" onclick="app.restoreArchive()">🔙 Restore (還原至原病房)</button>
+            <button class="action-btn" style="color: var(--danger);" onclick="app.deleteArchive()">❌ Delete Forever (永久刪除)</button>
+            <button class="action-btn" onclick="app.hideArchiveContextMenu()">Cancel</button>
         </div>
     </div>
 
@@ -304,8 +324,10 @@
         const DB_KEY = 'dsb_local_config';
         let supabaseClient = null, currentUser = null, currentWardId = null;
         let longPressTimer = null, selectedPatientId = null, selectedPatientData = null;
+        let selectedArchiveId = null, selectedArchiveData = null;
         let mediaRecorder = null, audioChunks = [];
         let selectionRange = null, selectedTextString = "";
+        let currentDetailSource = 'patients'; 
 
         mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
 
@@ -529,19 +551,33 @@
                             <div><span class="bed-badge">${p.bed_no}</span> <b style="color:var(--text-main);">${md.diagnosis || (isProc ? 'Analyzing...' : '<Unknown>')}</b></div>
                             ${isDone ? '<div class="status-done">✅ Done</div>' : ''} ${isProc ? '<div class="status-processing">Processing</div>' : ''}
                         </div><div style="font-size:0.85rem; color:var(--text-sub); margin-top:5px; line-height: 1.4;">${md.course ? md.course.substring(0,60)+'...' : ''}</div>`;
+                    
+                    // 修正長按干擾：移除原本的 mousedown/mouseup，純用 touch 或 pointer
                     div.addEventListener('touchstart', (e) => app.startLongPress(e, p));
                     div.addEventListener('touchend', app.cancelLongPress);
+                    div.addEventListener('touchmove', app.cancelLongPress); // 滑動時取消
                     div.addEventListener('mousedown', (e) => app.startLongPress(e, p)); 
                     div.addEventListener('mouseup', app.cancelLongPress);
-                    div.addEventListener('click', () => { if(!longPressTimer) app.openPatientDetail(p); });
+                    div.addEventListener('mouseleave', app.cancelLongPress);
+                    
+                    div.addEventListener('click', () => { 
+                        if(!longPressTimer) app.openPatientDetail(p, 'patients'); 
+                    });
                     list.appendChild(div);
                 });
             },
-            openPatientDetail: async (p) => {
+
+            // 修改 Detail 開啟邏輯，支援從典藏館進入
+            openPatientDetail: async (p, source) => {
+                currentDetailSource = source;
                 app.navTo('page-patient-detail');
                 const md = p.medical_data || {}; const basic = p.basic_info || {};
                 document.getElementById('detail-bed-no').innerText = `${p.bed_no} ${basic.name || ''}`;
-                if (p.status === 'done') await supabaseClient.from('patients').update({ status: 'read' }).eq('id', p.id);
+                
+                // 只有病人清單才需要 update read status
+                if (source === 'patients' && p.status === 'done') {
+                    await supabaseClient.from('patients').update({ status: 'read' }).eq('id', p.id);
+                }
                 
                 const renderSec = (title, content) => `<div class="detail-section"><div class="detail-title">${title}</div><div class="detail-content">${content || '<span class="unknown-data">Nil</span>'}</div></div>`;
                 let html = renderSec('Underlying Disease', Array.isArray(md.underlying) ? md.underlying.join(', ') : md.underlying) +
@@ -550,8 +586,22 @@
                 let todoHtml = Array.isArray(md.todos) ? md.todos.map(t=>`<div class="todo-item"><input type="checkbox"> ${t}</div>`).join('') : md.todos || 'Nil';
                 html += renderSec('Action Items', todoHtml) + renderSec('Differential Diagnosis', md.ddx) + renderSec('Critical Info', md.critical);
                 document.getElementById('detail-content-area').innerHTML = html;
+
+                // 設定返回按鈕邏輯
+                document.getElementById('btn-detail-back').onclick = () => {
+                    if(currentDetailSource === 'archives') {
+                        app.navTo('page-archives');
+                    } else {
+                        app.navTo('page-patients');
+                        app.loadPatients();
+                    }
+                };
             },
-            closePatientDetail: () => { app.navTo('page-patients'); app.loadPatients(); },
+
+            closePatientDetail: () => { 
+                if(currentDetailSource === 'archives') app.navTo('page-archives');
+                else { app.navTo('page-patients'); app.loadPatients(); }
+            },
 
             addPatient: async () => {
                 const bed = document.getElementById('new-bed').value;
@@ -568,9 +618,9 @@
                 document.getElementById('new-bed').value = ''; document.getElementById('new-raw').value = ''; fileInput.value = '';
             },
 
-            // --- ✅ 編輯病人功能 ---
+            // --- ✅ 編輯病人功能 (已修復 UUID Null 問題) ---
             editPatient: () => {
-                app.hideContextMenu();
+                app.hideContextMenu(); // 這裡不再清空 selectedPatientId
                 if (!selectedPatientData) return;
                 const p = selectedPatientData;
                 const md = p.medical_data || {};
@@ -594,12 +644,10 @@
                 if(!bed) return app.showAlert('Bed No. 為必填');
                 app.hideModal('modal-edit-patient');
 
-                // 更新既有的 JSON 資料
                 let newMd = selectedPatientData.medical_data || {};
                 newMd.diagnosis = diag;
                 newMd.course = course;
                 newMd.medications = meds;
-                
                 let newBasic = selectedPatientData.basic_info || {};
                 newBasic.name = name;
 
@@ -631,23 +679,40 @@
                 } catch (e) { supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId); }
             },
 
-            // --- Archive & Long Press ---
-            startLongPress: (e, patient) => { selectedPatientId = patient.id; selectedPatientData = patient; longPressTimer = setTimeout(() => { app.showContextMenu(); longPressTimer = null; }, 600); },
-            cancelLongPress: () => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } },
-            showContextMenu: () => { if(navigator.vibrate) navigator.vibrate(50); document.getElementById('context-menu-overlay').style.display = 'flex'; },
-            hideContextMenu: () => { document.getElementById('context-menu-overlay').style.display = 'none'; selectedPatientId = null; },
+            // --- 病人卡片長按邏輯 ---
+            startLongPress: (e, patient) => { 
+                selectedPatientId = patient.id; 
+                selectedPatientData = patient; 
+                longPressTimer = setTimeout(() => { 
+                    app.showContextMenu(); 
+                    longPressTimer = null; 
+                }, 600); 
+            },
+            cancelLongPress: () => { 
+                if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } 
+            },
+            showContextMenu: () => { 
+                if(navigator.vibrate) navigator.vibrate(50); 
+                document.getElementById('context-title').innerText = `Manage Bed ${selectedPatientData.bed_no}`;
+                document.getElementById('context-menu-overlay').style.display = 'flex'; 
+            },
+            hideContextMenu: () => { 
+                document.getElementById('context-menu-overlay').style.display = 'none'; 
+                // 注意：這裡不清除 selectedPatientId，確保後續 Modal 可用
+            },
             
             archivePatient: () => {
+                app.hideContextMenu();
                 app.showConfirm('典藏此病歷並移出病房？', async () => {
                     try {
                         const { error } = await supabaseClient.from('archives').insert({ 
                             user_id: currentUser.id, 
                             title: `${selectedPatientData.bed_no} - ${selectedPatientData.medical_data?.diagnosis || 'No Dx'}`, 
-                            content: selectedPatientData // ✅ 存入完整的物件結構，以便日後完美還原
+                            content: selectedPatientData // ✅ 存入完整的物件結構
                         });
                         if (error) throw error;
                         await supabaseClient.from('patients').delete().eq('id', selectedPatientId);
-                        app.loadPatients(); app.hideContextMenu();
+                        app.loadPatients();
                         app.showAlert("典藏成功！");
                     } catch(err) {
                         app.showAlert("典藏失敗。請確認您已執行 ALTER TABLE archives ADD COLUMN content jsonb 語法。\n錯誤: " + err.message);
@@ -655,37 +720,66 @@
                 });
             },
             
-            dischargePatient: () => { app.showConfirm('永久刪除資料？', async () => { await supabaseClient.from('patients').delete().eq('id', selectedPatientId); app.loadPatients(); app.hideContextMenu(); }); },
+            dischargePatient: () => { 
+                app.hideContextMenu();
+                app.showConfirm('永久刪除資料？', async () => { 
+                    await supabaseClient.from('patients').delete().eq('id', selectedPatientId); 
+                    app.loadPatients(); 
+                }); 
+            },
             
+            // --- 典藏館 (Archive) 邏輯 ---
             loadArchives: async () => {
                 const { data } = await supabaseClient.from('archives').select('*').order('created_at', { ascending: false });
                 const list = document.getElementById('archives-list'); list.innerHTML = '';
                 if(data) data.forEach(arc => {
-                    // ✅ 新增還原 (Restore) 按鈕
                     const div = document.createElement('div');
-                    div.className = 'card';
+                    div.className = 'card archive-card';
                     div.innerHTML = `
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div>
-                                <h3 style="margin:0;">${arc.title}</h3>
-                                <p style="color:var(--text-sub); font-size:0.8rem; margin:5px 0 0 0;">${new Date(arc.created_at).toLocaleDateString()}</p>
-                            </div>
-                            <button class="btn btn-sm btn-outline" onclick="app.restoreArchive('${arc.id}')">🔙 還原</button>
-                        </div>
+                        <h3 style="margin:0; color:var(--text-main);">${arc.title}</h3>
+                        <p style="color:var(--text-sub); font-size:0.8rem; margin:5px 0 0 0;">${new Date(arc.created_at).toLocaleDateString()}</p>
                     `;
+                    
+                    // 點擊查看，長按管理
+                    div.addEventListener('touchstart', (e) => app.startArchiveLongPress(e, arc));
+                    div.addEventListener('touchend', app.cancelLongPress);
+                    div.addEventListener('touchmove', app.cancelLongPress);
+                    div.addEventListener('mousedown', (e) => app.startArchiveLongPress(e, arc)); 
+                    div.addEventListener('mouseup', app.cancelLongPress);
+                    div.addEventListener('mouseleave', app.cancelLongPress);
+                    div.addEventListener('click', () => { 
+                        if(!longPressTimer && arc.content) app.openPatientDetail(arc.content, 'archives'); 
+                    });
+
                     list.appendChild(div);
                 });
             },
 
-            restoreArchive: async (archiveId) => {
-                if(!currentWardId) return app.showAlert("請先進入要還原的目標病房，再點擊 Archives 進行還原。");
-                app.showConfirm('將此病歷還原至目前的病房中？', async () => {
-                    const { data: arc } = await supabaseClient.from('archives').select('*').eq('id', archiveId).single();
-                    if (!arc || !arc.content) return app.showAlert("無法讀取舊版典藏資料格式。");
-                    
-                    const p = arc.content;
+            startArchiveLongPress: (e, arc) => {
+                selectedArchiveId = arc.id;
+                selectedArchiveData = arc;
+                longPressTimer = setTimeout(() => {
+                    app.showArchiveContextMenu();
+                    longPressTimer = null;
+                }, 600);
+            },
+            showArchiveContextMenu: () => {
+                if(navigator.vibrate) navigator.vibrate(50);
+                document.getElementById('archive-context-title').innerText = `Archive: ${selectedArchiveData.title}`;
+                document.getElementById('archive-context-menu-overlay').style.display = 'flex';
+            },
+            hideArchiveContextMenu: () => {
+                document.getElementById('archive-context-menu-overlay').style.display = 'none';
+            },
+
+            restoreArchive: async () => {
+                app.hideArchiveContextMenu();
+                app.showConfirm('將此病歷還原回當時的病房中？', async () => {
+                    const p = selectedArchiveData.content;
+                    if (!p || !p.ward_id) return app.showAlert("舊版格式無法還原，請手動複製內容。");
+
                     const { error } = await supabaseClient.from('patients').insert({
-                        ward_id: currentWardId,
+                        ward_id: p.ward_id, // 還原到當初的病房
                         bed_no: p.bed_no || 'Res',
                         basic_info: p.basic_info || {},
                         medical_data: p.medical_data || {},
@@ -693,13 +787,21 @@
                     });
                     
                     if (error) return app.showAlert("還原失敗: " + error.message);
-                    await supabaseClient.from('archives').delete().eq('id', archiveId);
+                    await supabaseClient.from('archives').delete().eq('id', selectedArchiveId);
                     app.loadArchives();
                     app.showAlert("病歷已成功還原！");
                 });
             },
 
-            // --- ✅ 5. 修正：會議精靈 (長檔上傳冷卻機制) ---
+            deleteArchive: async () => {
+                app.hideArchiveContextMenu();
+                app.showConfirm('永久刪除這筆典藏紀錄？(無法復原)', async () => {
+                    await supabaseClient.from('archives').delete().eq('id', selectedArchiveId);
+                    app.loadArchives();
+                });
+            },
+
+            // --- 會議精靈 (修正冷卻機制) ---
             toggleRecording: async () => {
                 const btn = document.getElementById('record-btn');
                 const textDiv = document.getElementById('meeting-text');
