@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -32,7 +32,6 @@
         body {
             background-color: var(--bg-color); color: var(--text-main); font-family: var(--font-family);
             margin: 0; padding-bottom: 80px; transition: background-color 0.3s ease;
-            /* 🚫 強制禁止 iOS 選取與長按選單，解決 Safari 干擾問題 */
             -webkit-tap-highlight-color: transparent; 
             -webkit-touch-callout: none;
             -webkit-user-select: none;
@@ -224,9 +223,7 @@
             <div class="header">
                 <h1>Meeting Ghost 👻</h1>
                 <div style="display: flex; gap: 8px;">
-                    <button id="record-btn" class="btn" onclick="app.toggleRecording()">🎙️ Start</button>
-                    <input type="file" id="audio-upload" accept="audio/*,video/*,.m4a,audio/x-m4a,audio/mp4" style="display: none;" onchange="app.handleFileUpload(this)">
-                    <button class="btn btn-outline" onclick="document.getElementById('audio-upload').click()">📂 Upload</button>
+                    <button id="record-btn" class="btn" onclick="app.toggleRecording()">🎙️ Start Live Record</button>
                 </div>
             </div>
             <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
@@ -251,10 +248,10 @@
             <div class="card">
                 <h3>Gemini Configuration</h3>
                 <label>Text AI Key</label><input type="password" id="key-text">
-                <label>Text Model</label><input type="text" id="model-text" placeholder="gemini-2.0-flash" value="gemini-2.0-flash">
+                <label>Text Model</label><input type="text" id="model-text" placeholder="gemini-2.5-flash" value="gemini-2.5-flash">
                 <hr style="border:0; border-top:1px solid var(--border); margin:15px 0;">
                 <label>Voice AI Key</label><input type="password" id="key-voice">
-                <label>Voice Model</label><input type="text" id="model-voice" placeholder="gemini-1.5-flash" value="gemini-1.5-flash">
+                <label>Voice Model</label><input type="text" id="model-voice" placeholder="gemini-2.5-flash" value="gemini-2.5-flash">
                 <label>Selection Prompt</label>
                 <textarea id="prompt-selection" rows="2">Please explain briefly.</textarea>
                 <button class="btn" onclick="app.saveSettings()" style="margin-top:10px;">💾 Save Settings</button>
@@ -275,6 +272,7 @@
     <div id="context-menu-overlay" class="action-sheet-overlay" onclick="app.hideContextMenu()">
         <div class="action-sheet" onclick="event.stopPropagation()">
             <h3 id="context-title" style="margin-top:0; text-align:center; color:var(--text-sub);">Manage</h3>
+            <button class="action-btn" style="color: var(--teal);" onclick="app.showAddRawData()">➕ Update Note</button>
             <button class="action-btn" onclick="app.editPatient()">✏️ Edit</button>
             <button class="action-btn" onclick="app.archivePatient()">📂 Archive</button>
             <button class="action-btn" style="color: var(--danger);" onclick="app.dischargePatient()">❌ Discharge</button>
@@ -299,6 +297,17 @@
         <label>Raw Data</label><textarea id="new-raw" rows="4"></textarea>
         <label>Image</label><input type="file" id="new-image" accept="image/*">
         <div style="text-align:right; margin-top: 15px;"><button class="btn btn-outline" onclick="app.hideModal('modal-add-patient')">Cancel</button> <button class="btn" onclick="app.addPatient()">Save & Process</button></div>
+    </div>
+
+    <div id="modal-update-note" class="card" style="display:none; position:fixed; top:5%; left:5%; right:5%; z-index:200; box-shadow: 0 0 50px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto;">
+        <h3 style="color:var(--teal)">Update Progress Note</h3>
+        <p style="font-size:0.85rem; color:var(--text-sub);">Add new clinical notes or daily progress pictures. The AI will merge this with existing data.</p>
+        <label>New Text Data</label><textarea id="update-raw-text" rows="4" placeholder="Enter new progress note..."></textarea>
+        <label>New Image (optional)</label><input type="file" id="update-image" accept="image/*">
+        <div style="text-align:right; margin-top: 15px;">
+            <button class="btn btn-outline" onclick="app.hideModal('modal-update-note')">Cancel</button> 
+            <button class="btn" onclick="app.submitUpdateNote()">🤖 AI Merge & Save</button>
+        </div>
     </div>
 
     <div id="modal-edit-patient" class="card" style="display:none; position:fixed; top:5%; left:5%; right:5%; z-index:200; box-shadow: 0 0 50px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto;">
@@ -331,7 +340,7 @@
         mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
 
         const app = {
-            state: { keys: { text: '', voice: '' }, models: { text: 'gemini-2.0-flash', voice: 'gemini-1.5-flash' }, selectionPrompt: "" },
+            state: { keys: { text: '', voice: '' }, models: { text: 'gemini-2.5-flash', voice: 'gemini-2.5-flash' }, selectionPrompt: "" },
             meetingContext: "", 
 
             showAlert: (msg, title="Info") => {
@@ -354,11 +363,9 @@
                 document.getElementById('custom-confirm').style.display = 'block';
             },
             closeConfirm: (result) => {
-                // 先把 callback 存起來，避免被 closeAllModals 清空
                 const callbackToRun = app.confirmCallback; 
                 app.closeAllModals(); 
-                app.confirmCallback = null; // 安全地清空狀態
-                // 執行暫存的 callback
+                app.confirmCallback = null; 
                 if (result && callbackToRun) callbackToRun(); 
             },
 
@@ -477,20 +484,20 @@
                 if (data) {
                     document.getElementById('key-text').value = data.gemini_key_text || '';
                     document.getElementById('key-voice').value = data.gemini_key_voice || '';
-                    document.getElementById('model-text').value = data.model_text || 'gemini-2.0-flash';
-                    document.getElementById('model-voice').value = data.model_voice || 'gemini-1.5-flash';
+                    document.getElementById('model-text').value = data.model_text || 'gemini-2.5-flash';
+                    document.getElementById('model-voice').value = data.model_voice || 'gemini-2.5-flash';
                     app.state.keys.text = data.gemini_key_text || '';
                     app.state.keys.voice = data.gemini_key_voice || '';
-                    app.state.models.text = data.model_text || 'gemini-2.0-flash';
-                    app.state.models.voice = data.model_voice || 'gemini-1.5-flash';
+                    app.state.models.text = data.model_text || 'gemini-2.5-flash';
+                    app.state.models.voice = data.model_voice || 'gemini-2.5-flash';
                     if(document.getElementById('prompt-selection')) app.state.selectionPrompt = document.getElementById('prompt-selection').value;
                 }
             },
             saveSettings: async () => {
                 const textKey = document.getElementById('key-text').value;
                 const voiceKey = document.getElementById('key-voice').value;
-                const textModel = document.getElementById('model-text').value || 'gemini-2.0-flash';
-                const voiceModel = document.getElementById('model-voice').value || 'gemini-1.5-flash';
+                const textModel = document.getElementById('model-text').value || 'gemini-2.5-flash';
+                const voiceModel = document.getElementById('model-voice').value || 'gemini-2.5-flash';
                 app.state.selectionPrompt = document.getElementById('prompt-selection').value;
                 
                 const updates = { user_id: currentUser.id, gemini_key_text: textKey, gemini_key_voice: voiceKey, model_text: textModel, model_voice: voiceModel, updated_at: new Date() };
@@ -532,21 +539,18 @@
                 const list = document.getElementById('patients-list'); list.innerHTML = '';
                 data.sort((a, b) => a.bed_no.localeCompare(b.bed_no, undefined, { numeric: true, sensitivity: 'base' }));
                 if(data) data.forEach(p => {
-                    const md = p.medical_data || {}; const isProc = p.status === 'processing';
+                    const md = p.medical_data || {}; 
+                    const basic = p.basic_info || {};
+                    const isProc = p.status === 'processing';
                     let isDone = (p.status === 'done' && ((new Date() - new Date(p.updated_at)) / 60000) < 10);
                     const div = document.createElement('div'); div.className = 'card patient-card';
-                    // 🚫 禁止預設右鍵選單 (iOS 長按)
                     div.setAttribute('oncontextmenu', 'return false;');
                     div.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div><span class="bed-badge">${p.bed_no}</span> <b style="color:var(--text-main);">${md.diagnosis || (isProc ? 'Analyzing...' : '<Unknown>')}</b></div>
+                            <div><span class="bed-badge">${p.bed_no}</span> <b style="color:var(--text-main);">${basic.name ? basic.name + ' - ' : ''}${md.diagnosis || (isProc ? 'Analyzing...' : '<Unknown>')}</b></div>
                             ${isDone ? '<div class="status-done">✅ Done</div>' : ''} ${isProc ? '<div class="status-processing">Processing</div>' : ''}
                         </div><div style="font-size:0.85rem; color:var(--text-sub); margin-top:5px; line-height: 1.4;">${md.course ? md.course.substring(0,60)+'...' : ''}</div>`;
                     
-                    div.addEventListener('touchstart', (e) => {
-                        // 🛑 在 touchstart 就啟動計時，若觸發長按則 preventDefault
-                        app.startLongPress(e, p);
-                    }, {passive: false});
-                    
+                    div.addEventListener('touchstart', (e) => { app.startLongPress(e, p); }, {passive: false});
                     div.addEventListener('touchend', app.cancelLongPress);
                     div.addEventListener('touchmove', app.cancelLongPress);
                     div.addEventListener('mousedown', (e) => app.startLongPress(e, p)); 
@@ -585,21 +589,115 @@
 
             addPatient: async () => {
                 const bed = document.getElementById('new-bed').value;
+                const name = document.getElementById('new-name').value;
                 const rawText = document.getElementById('new-raw').value;
                 const fileInput = document.getElementById('new-image');
                 if(!bed) return app.showAlert('Bed No. Required'); app.hideModal('modal-add-patient');
-                const { data } = await supabaseClient.from('patients').insert({ ward_id: currentWardId, bed_no: bed, status: 'processing' }).select().single();
+                
+                const { data } = await supabaseClient.from('patients').insert({ 
+                    ward_id: currentWardId, bed_no: bed, basic_info: { name: name }, status: 'processing' 
+                }).select().single();
+                
                 app.loadPatients();
                 if (fileInput.files.length > 0) {
                     const reader = new FileReader();
                     reader.onloadend = () => { app.processPatientData(data.id, rawText, reader.result.split(',')[1]); };
                     reader.readAsDataURL(fileInput.files[0]);
                 } else app.processPatientData(data.id, rawText, null);
-                document.getElementById('new-bed').value = ''; document.getElementById('new-raw').value = ''; fileInput.value = '';
+                document.getElementById('new-bed').value = ''; document.getElementById('new-name').value = ''; 
+                document.getElementById('new-raw').value = ''; fileInput.value = '';
+            },
+
+            showAddRawData: () => {
+                app.hideContextMenu();
+                if(!selectedPatientData) return;
+                document.getElementById('update-raw-text').value = '';
+                document.getElementById('update-image').value = '';
+                app.showModal('modal-update-note');
+            },
+
+            submitUpdateNote: async () => {
+                const text = document.getElementById('update-raw-text').value;
+                const fileInput = document.getElementById('update-image');
+                if(!text && fileInput.files.length === 0) return app.showAlert("Please provide text or image");
+                
+                app.hideModal('modal-update-note');
+                
+                const targetId = selectedPatientId;
+                const targetData = selectedPatientData;
+                await supabaseClient.from('patients').update({ status: 'processing' }).eq('id', targetId);
+                app.loadPatients(); 
+
+                if (fileInput.files.length > 0) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => { app.processUpdateData(targetId, targetData, text, reader.result.split(',')[1]); };
+                    reader.readAsDataURL(fileInput.files[0]);
+                } else {
+                    app.processUpdateData(targetId, targetData, text, null);
+                }
+            },
+
+            processUpdateData: async (patientId, oldData, newText, newImageBase64) => {
+                if (!app.state.keys.text) {
+                    await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
+                    return app.showAlert('Please set Text AI Key');
+                }
+                const oldMdStr = JSON.stringify(oldData.medical_data || {});
+                const prompt = `You are a medical assistant. Merge the [New Progress Note/Image] into the [Existing Patient Data]. 
+                Return ONLY a raw JSON object with updated fields: {"diagnosis":"...","underlying":["..."],"course":"...(Markdown format, seamlessly append or integrate new events)","medications":"...","goal":"...","todos":["..."],"ddx":"...","critical":"..."}
+                Do NOT return markdown code blocks, return pure JSON.
+                [Existing Patient Data]: ${oldMdStr}`;
+                
+                const parts = [{ text: prompt }]; 
+                if (newText) parts.push({ text: `[New Progress Note]: ${newText}` }); 
+                if (newImageBase64) parts.push({ inline_data: { mime_type: "image/jpeg", data: newImageBase64 } });
+                
+                // 保留最精華的 Exponential Backoff 防禦機制
+                let retries = 4;
+                for (let attempt = 1; attempt <= retries; attempt++) {
+                    try {
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${app.state.models.text}:generateContent?key=${app.state.keys.text}`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ contents: [{ parts }] })
+                        });
+                        const result = await res.json();
+                        
+                        if (result.error) throw result.error; 
+                        if (!result.candidates) throw new Error("AI No Response");
+                        
+                        let aiText = result.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
+                        await supabaseClient.from('patients').update({ medical_data: JSON.parse(aiText), status: 'done', updated_at: new Date() }).eq('id', patientId);
+                        
+                        app.closeAllModals(); 
+                        app.loadPatients();
+                        return; 
+                        
+                    } catch (e) { 
+                        console.error("Update Note Error:", e);
+                        const errMsg = e.message || JSON.stringify(e);
+                        
+                        if (errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+                            let waitTime = 20 * attempt; 
+                            if (attempt === retries) {
+                                await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId); 
+                                app.showAlert("Free tier API limit reached. Please try again in a few minutes.");
+                                app.loadPatients();
+                                return;
+                            }
+                            app.showAlert(`API Rate Limit... System is auto-retrying in queue (${attempt}/${retries})\nPlease wait ~${waitTime}s and do not close the window.`, "Processing ⏳");
+                            await new Promise(r => setTimeout(r, waitTime * 1000));
+                        } else {
+                            await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId); 
+                            app.showAlert("Update failed: " + errMsg);
+                            app.loadPatients();
+                            return;
+                        }
+                    }
+                }
             },
 
             editPatient: () => {
-                app.hideContextMenu(); // Do not clear selectedPatientId here!
+                app.hideContextMenu(); 
                 if (!selectedPatientData) return;
                 const p = selectedPatientData;
                 const md = p.medical_data || {};
@@ -636,24 +734,43 @@
                 if (!app.state.keys.text) return app.showAlert('Please set Text AI Key');
                 const prompt = `Analyze clinical notes, return JSON: {"diagnosis":"Main Dx","underlying":["Hx"],"course":"Markdown","medications":"Meds","goal":"Goal","todos":["Plan"],"ddx":"DDx","critical":"Allergy/DNR"}`;
                 const parts = [{ text: prompt }]; if (text) parts.push({ text: `Notes: ${text}` }); if (imageBase64) parts.push({ inline_data: { mime_type: "image/jpeg", data: imageBase64 } });
-                try {
-                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${app.state.models.text}:generateContent?key=${app.state.keys.text}`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts }] })
-                    });
-                    const result = await res.json();
-                    if (!result.candidates) throw new Error("AI No Response");
-                    let aiText = result.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
-                    await supabaseClient.from('patients').update({ medical_data: JSON.parse(aiText), raw_data: null, status: 'done', updated_at: new Date() }).eq('id', patientId);
-                    app.loadPatients();
-                } catch (e) { supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId); }
+                
+                // 同樣保留給新建病人的排隊機制
+                let retries = 4;
+                for (let attempt = 1; attempt <= retries; attempt++) {
+                    try {
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${app.state.models.text}:generateContent?key=${app.state.keys.text}`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ contents: [{ parts }] })
+                        });
+                        const result = await res.json();
+                        if (!result.candidates) throw new Error("AI No Response");
+                        let aiText = result.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
+                        await supabaseClient.from('patients').update({ medical_data: JSON.parse(aiText), raw_data: null, status: 'done', updated_at: new Date() }).eq('id', patientId);
+                        app.loadPatients();
+                        return;
+                    } catch (e) { 
+                        if (e.message && (e.message.includes('429') || e.message.includes('Quota'))) {
+                             let waitTime = 20 * attempt; 
+                             if (attempt === retries) {
+                                 await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId); 
+                                 app.loadPatients();
+                                 return;
+                             }
+                             await new Promise(r => setTimeout(r, waitTime * 1000));
+                        } else {
+                             await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
+                             app.loadPatients();
+                             return;
+                        }
+                    }
+                }
             },
 
             startLongPress: (e, patient) => { 
                 selectedPatientId = patient.id; 
                 selectedPatientData = patient; 
                 longPressTimer = setTimeout(() => { 
-                    // 🛑 觸發長按時，禁止瀏覽器預設行為
                     if (e.cancelable) e.preventDefault(); 
                     app.showContextMenu(); 
                     longPressTimer = null; 
@@ -670,7 +787,6 @@
             hideContextMenu: () => { document.getElementById('context-menu-overlay').style.display = 'none'; },
             
             archivePatient: () => {
-                // 🛑 鎖定 ID 到閉包中，避免被 clear
                 const targetId = selectedPatientId;
                 const targetData = selectedPatientData;
                 
@@ -680,7 +796,7 @@
                         const { error } = await supabaseClient.from('archives').insert({ 
                             user_id: currentUser.id, 
                             title: `${targetData.bed_no} - ${targetData.medical_data?.diagnosis || 'No Dx'}`, 
-                            content: targetData // Store full JSON
+                            content: targetData 
                         });
                         if (error) throw error;
                         await supabaseClient.from('patients').delete().eq('id', targetId);
@@ -744,7 +860,6 @@
                     const p = targetData.content;
                     if (!p || !p.ward_id) return app.showAlert("Cannot restore old format.");
                     
-                    // Restore to patients table
                     const { error } = await supabaseClient.from('patients').insert({
                         ward_id: p.ward_id, bed_no: p.bed_no || 'Res', basic_info: p.basic_info || {},
                         medical_data: p.medical_data || {}, status: 'done'
@@ -772,9 +887,9 @@
                     try {
                         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                         mediaRecorder = new MediaRecorder(stream);
-                        app.meetingContext = ""; audioChunks = [];
+                        app.meetingContext = ""; 
                         textDiv.innerHTML = '<p style="color:var(--danger);">🔴 Recording... (60s Auto-Analyze)</p>';
-                        btn.innerText = '⏹ Stop'; btn.classList.add('btn-outline');
+                        btn.innerText = '⏹ Stop Live Record'; btn.classList.add('btn-outline');
 
                         mediaRecorder.ondataavailable = async (e) => {
                             if (e.data.size > 0) {
@@ -786,50 +901,17 @@
                     } catch (err) { app.showAlert('Mic Error: ' + err.message); }
                 } else {
                     if (mediaRecorder) { mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t=>t.stop()); }
-                    btn.innerText = '🎙️ Start'; btn.classList.remove('btn-outline');
+                    btn.innerText = '🎙️ Start Live Record'; btn.classList.remove('btn-outline');
                     textDiv.innerHTML += '<p style="color:var(--teal);">⏹ Stopped.</p>';
                 }
             },
 
-            handleFileUpload: async (input) => {
-                const file = input.files[0];
-                if (!file) return;
-                app.meetingContext = ""; 
-                const textDiv = document.getElementById('meeting-text');
-                textDiv.innerHTML = `<p>📂 Processing: ${file.name}</p>`;
-                
-                const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB 切片
-                let offset = 0; let chunkIndex = 0;
-                
-                try {
-                    while(offset < file.size) {
-                        if (chunkIndex > 0) {
-                            textDiv.innerHTML += `<p style="color:var(--primary);">⏳ Cooling down 15s for API safety...</p>`;
-                            textDiv.scrollTop = textDiv.scrollHeight;
-                            await new Promise(r => setTimeout(r, 15000));
-                        }
-                        const chunk = file.slice(offset, offset + CHUNK_SIZE);
-                        textDiv.innerHTML += `<p>🚀 Analyzing chunk ${chunkIndex+1}...</p>`;
-                        textDiv.scrollTop = textDiv.scrollHeight;
-                        
-                        // 確保等待這一塊處理完成（新版的 processAudioAI 內部包含了重試機制）
-                        await app.processAudioAI(chunk, true); 
-                        
-                        offset += CHUNK_SIZE; chunkIndex++;
-                    }
-                    textDiv.innerHTML += `<p style="color:var(--teal);">✅ Complete</p>`;
-                } catch (err) {
-                    textDiv.innerHTML += `<p style="color:var(--danger);">🚨 Stopped due to error: ${err.message}</p>`;
-                }
-                input.value = ''; 
-            },
-
+            // ✨ 保留最精華的語音防禦機制 (Exponential Backoff)
             processAudioAI: async (audioBlob, isAppend) => {
                 if (!app.state.keys.voice) return;
-                const modelName = app.state.models.voice || 'gemini-1.5-flash';
+                const modelName = app.state.models.voice || 'gemini-2.5-flash';
                 const textDiv = document.getElementById('meeting-text');
 
-                // 1. 將 FileReader 乾淨地包裝成 Promise (避免舊版混亂的 Callback 地獄)
                 const getBase64 = (blob) => new Promise((resolve) => {
                     const reader = new FileReader();
                     reader.onloadend = () => resolve(reader.result.split(',')[1]);
@@ -842,11 +924,10 @@
 
                 const prompt = `You are a medical meeting assistant.
                 【Previous Context】: ${app.meetingContext || 'None'}
-                Analyze this audio chunk. Update summary.
-                Return pure JSON: {"transcript": "Key points", "summary": "Updated Markdown summary", "mermaid": "Updated Mermaid code (graph TD...)"}`;
+                Analyze this audio chunk. Update the summary integrating new info.
+                Return pure JSON only, no markdown blocks: {"transcript": "Brief key points of this chunk", "summary": "Comprehensive Markdown summary so far", "mermaid": "Updated Mermaid code (graph TD...)"}`;
 
-                // 2. 實作重試機制 (Retry Mechanism)
-                let retries = 3; 
+                let retries = 5; 
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     try {
                         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${app.state.keys.voice}`, {
@@ -855,42 +936,39 @@
                         });
                         const result = await response.json();
                         
-                        // 若 API 回傳內部 error 物件，主動拋出例外
                         if (result.error) throw result.error;
+                        if (!result.candidates || !result.candidates[0]) throw new Error("AI returned empty content. Audio might be unclear.");
                         
                         let aiText = result.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
                         const aiJson = JSON.parse(aiText);
-                        app.meetingContext = aiJson.summary; 
                         
-                        textDiv.innerHTML += `<div style="padding:10px; background:var(--bg-color); border-radius:8px; margin-top:8px;"><strong>Updated:</strong><br>${marked.parse(aiJson.summary)}</div>`;
+                        app.meetingContext = aiJson.summary || app.meetingContext; 
+                        
+                        textDiv.innerHTML += `<div style="padding:10px; background:var(--bg-color); border-radius:8px; margin-top:8px;"><strong>📝 Updated Analysis:</strong><br>${marked.parse(aiJson.summary || aiJson.transcript || "No significant new points")}</div>`;
                         textDiv.scrollTop = textDiv.scrollHeight;
                         if (aiJson.mermaid) app.renderMermaid(aiJson.mermaid);
                         
-                        return; // 成功解析，安全離開函數
+                        return; 
 
                     } catch (e) {
                         console.error("Audio processing error:", e);
                         const errMsg = e.message || JSON.stringify(e);
                         
-                        // 判斷是否為 429 或是 Quota exceeded (配額限制)
-                        if (errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('Too Many Requests')) {
-                            // 動態擷取 API 要求我們等幾秒 (例如 "retry in 44.94s")
-                            let waitTime = 60; // 抓不到就預設等 60 秒
+                        if (errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('Too Many Requests') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+                            let waitTime = 45; 
                             const match = errMsg.match(/retry in ([\d\.]+)s/);
-                            if (match) waitTime = Math.ceil(parseFloat(match[1])) + 2; // 無條件進位再多加 2 秒緩衝
+                            if (match) waitTime = Math.max(Math.ceil(parseFloat(match[1])) + 5, 30); 
 
-                            textDiv.innerHTML += `<p style="color:orange;">⚠️ API 限流 (第 ${attempt}/${retries} 次重試). 系統自動等待 ${waitTime} 秒...</p>`;
+                            waitTime = waitTime * attempt;
+
+                            textDiv.innerHTML += `<p style="color:orange;">⚠️ Resource exhausted (Retry ${attempt}/${retries}). Auto-waiting ${waitTime}s...</p>`;
                             textDiv.scrollTop = textDiv.scrollHeight;
                             
-                            // 真正的停止等待
                             await new Promise(r => setTimeout(r, waitTime * 1000));
                             
-                            if (attempt === retries) {
-                                throw new Error("超過最大重試次數，請稍後再試。");
-                            }
+                            if (attempt === retries) throw new Error("Free quota exceeded. Please try later.");
                         } else {
-                            // 如果是其他錯誤（例如 JSON 格式壞掉），直接報錯停止
-                            textDiv.innerHTML += `<p style="color:var(--danger);">❌ 解析錯誤: ${errMsg}</p>`;
+                            textDiv.innerHTML += `<p style="color:var(--danger);">❌ Analysis failed: ${errMsg}</p>`;
                             throw new Error(errMsg);
                         }
                     }
