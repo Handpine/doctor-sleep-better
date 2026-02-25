@@ -156,7 +156,6 @@
         .page.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* ✨ Action Sheet 正確修復 */
         .action-sheet-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(18, 26, 22, 0.4); backdrop-filter: blur(6px); z-index: 300; display: none; justify-content: center; align-items: flex-end; }
         .action-sheet { background: var(--bg-color); width: 100%; max-width: 600px; border-radius: 28px 28px 0 0; padding: 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -166,7 +165,6 @@
 
         #mermaid-container { width: 100%; min-height: 200px; overflow-x: auto; background: rgba(255,255,255,0.6); padding: 15px; border-radius: 16px; display: flex; justify-content: center; align-items: center; border: 1px dashed var(--primary);}
 
-        /* ✨ 終極升級：底部懸浮工具列 (防 iOS 跑版) */
         #selection-toolbar { 
             position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); 
             display: none; justify-content: center; align-items: center; gap: 8px;
@@ -493,6 +491,7 @@
             state: { keys: { text: '', voice: '' }, models: { text: 'gemini-2.0-flash', voice: 'gemini-2.0-flash' }, selectionPrompt: "" },
             meetingContext: "", 
             
+            // ✨ 全域排隊系統，任何 API 呼叫都會乖乖在這裡等，消滅 429 的源頭
             apiQueue: Promise.resolve(),
             enqueueApiCall: (apiFunction) => {
                 app.apiQueue = app.apiQueue.then(async () => {
@@ -560,7 +559,6 @@
                 }
             },
 
-            // ✨ 懸浮於畫面底部的防跑版文字工具列
             handleSelectionChange: () => {
                 const selection = window.getSelection();
                 const toolbar = document.getElementById('selection-toolbar');
@@ -569,10 +567,12 @@
                 if (!anchorNode.closest('.selectable-area') && !anchorNode.closest('.detail-content')) return;
                 selectedTextString = selection.toString().trim();
                 selectionRange = selection.getRangeAt(0);
-                toolbar.style.display = 'flex'; // 只負責顯示，位置交給 CSS 的 Fixed Bottom 處理
+                toolbar.style.display = 'flex'; 
             },
             webSearchSelected: () => { window.open(`https://www.google.com/search?q=${encodeURIComponent(selectedTextString)}`, '_blank'); app.closeAllModals(); },
-            aiLookupSelected: async () => {
+            
+            // ✨ 將 AI Guide 也收入排隊系統，保護額度
+            aiLookupSelected: () => {
                 if (!app.state.keys.text) return app.showAlert("Please configure Text AI Key in Settings.");
                 document.getElementById('global-overlay').style.display = 'block';
                 const modal = document.getElementById('ai-result-modal');
@@ -580,21 +580,25 @@
                 app.lockScroll();
                 document.getElementById('ai-result-content').innerHTML = '<div class="status-badge status-processing" style="background:transparent; justify-content:flex-start;">Analyzing term...</div>';
                 document.getElementById('btn-save-annotation').style.display = 'none';
-                const prompt = app.state.selectionPrompt || "Explain this medical term briefly in English.";
-                try {
-                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${app.state.models.text}:generateContent?key=${app.state.keys.text}`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: [{ text: `${prompt}\nKeyword: "${selectedTextString}"` }] }] })
-                    });
-                    const result = await res.json();
-                    const aiText = result.candidates[0].content.parts[0].text;
-                    document.getElementById('ai-result-content').innerHTML = marked.parse(aiText);
-                    if (document.getElementById('page-patient-detail').classList.contains('active')) {
-                        document.getElementById('btn-save-annotation').style.display = 'block';
-                        document.getElementById('btn-save-annotation').dataset.note = aiText;
-                    }
-                } catch(e) { document.getElementById('ai-result-content').innerText = "Error: " + e.message; }
+                
+                app.enqueueApiCall(async () => {
+                    const prompt = app.state.selectionPrompt || "Explain this medical term briefly in English.";
+                    try {
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${app.state.models.text}:generateContent?key=${app.state.keys.text}`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ contents: [{ parts: [{ text: `${prompt}\nKeyword: "${selectedTextString}"` }] }] })
+                        });
+                        const result = await res.json();
+                        const aiText = result.candidates[0].content.parts[0].text;
+                        document.getElementById('ai-result-content').innerHTML = marked.parse(aiText);
+                        if (document.getElementById('page-patient-detail').classList.contains('active')) {
+                            document.getElementById('btn-save-annotation').style.display = 'block';
+                            document.getElementById('btn-save-annotation').dataset.note = aiText;
+                        }
+                    } catch(e) { document.getElementById('ai-result-content').innerText = "Error: " + e.message; }
+                });
             },
+            
             saveAnnotation: () => {
                 if (!selectionRange) return;
                 const note = document.getElementById('btn-save-annotation').dataset.note;
@@ -633,7 +637,6 @@
                 } catch(e) { app.showLoginPage(); }
             },
             
-            // ✨ 修正：精準的登入與註冊錯誤判斷邏輯
             login: async () => {
                 const url = document.getElementById('supabase-url').value;
                 const key = document.getElementById('supabase-key').value;
@@ -643,16 +646,12 @@
                 localStorage.setItem(DB_KEY, JSON.stringify({ supabaseUrl: url, supabaseKey: key }));
                 supabaseClient = window.supabase.createClient(url, key);
                 
-                // 先嘗試登入
                 const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                 
                 if(error) {
-                    // 如果錯誤原因是密碼錯誤或帳號無效，不要嘗試註冊
                     if (error.message.includes("Invalid login credentials") || error.message.includes("Invalid credentials")) {
                         return app.showAlert('Incorrect email or password. Please try again.', 'Login Failed');
                     }
-                    
-                    // 若並非密碼錯誤，嘗試註冊新帳號
                     const { data: sData, error: sError } = await supabaseClient.auth.signUp({ email, password });
                     if(sError) {
                         if (sError.message.includes("already registered")) {
@@ -938,7 +937,6 @@
                 });
             },
 
-            // ✨ 強制 Prompt 輸出時間軸條列清單
             processUpdateData: async (patientId, oldData, newText, newImageBase64) => {
                 if (!app.state.keys.text) {
                     await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
@@ -1044,7 +1042,6 @@
                 app.loadPatients();
             },
 
-            // ✨ 強制 Prompt 輸出時間軸條列清單
             processPatientData: async (patientId, text, imageBase64) => {
                 if (!app.state.keys.text) {
                     await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
@@ -1103,7 +1100,6 @@
             cancelLongPress: () => { 
                 if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } 
             },
-            // ✨ 已修正長按選單跑版 Bug
             showContextMenu: () => { 
                 if(navigator.vibrate) navigator.vibrate(50); 
                 document.getElementById('context-title').innerText = `Manage Bed ${selectedPatientData.bed_no}`;
@@ -1168,7 +1164,6 @@
                     app.showArchiveContextMenu(); longPressTimer = null; 
                 }, 600);
             },
-            // ✨ 已修正長按選單跑版 Bug
             showArchiveContextMenu: () => {
                 if(navigator.vibrate) navigator.vibrate(50);
                 document.getElementById('archive-context-title').innerText = `Archive: ${selectedArchiveData.title}`;
@@ -1205,6 +1200,7 @@
                 });
             },
 
+            // ✨ 將語音處理也送入強制排隊系統，根除幽靈 429
             toggleRecording: async () => {
                 const btn = document.getElementById('record-btn');
                 const textDiv = document.getElementById('meeting-text');
@@ -1218,8 +1214,17 @@
 
                         mediaRecorder.ondataavailable = async (e) => {
                             if (e.data.size > 0) {
-                                const blob = new Blob([e.data], { type: 'audio/mp4' }); 
-                                await app.processAudioAI(blob, true); 
+                                // ✨ 動態抓取瀏覽器原生的正確音訊格式，避免 400 錯誤
+                                let actualMime = mediaRecorder.mimeType || 'audio/webm';
+                                const blob = new Blob([e.data], { type: actualMime }); 
+                                
+                                textDiv.innerHTML += `<div class="status-badge status-retrying" style="justify-content:flex-start; margin-top:12px;">⏳ Audio chunk queued...</div>`;
+                                textDiv.scrollTop = textDiv.scrollHeight;
+
+                                // 放入排隊系統
+                                app.enqueueApiCall(async () => {
+                                    await app.processAudioAI(blob);
+                                });
                             }
                         };
                         mediaRecorder.start(60000); 
@@ -1231,13 +1236,17 @@
                 }
             },
 
-            processAudioAI: async (audioBlob, isAppend) => {
-                if (!app.state.keys.voice) return;
+            processAudioAI: async (audioBlob) => {
+                if (!app.state.keys.voice) {
+                    const textDiv = document.getElementById('meeting-text');
+                    textDiv.innerHTML += `<div class="status-badge status-error" style="justify-content:flex-start; margin-top:12px;">⚠️ Voice AI Key is missing. Check Settings.</div>`;
+                    return;
+                }
                 const modelName = app.state.models.voice || 'gemini-2.0-flash';
                 const textDiv = document.getElementById('meeting-text');
 
                 const base64Audio = await app.fileToBase64(audioBlob);
-                let mimeType = audioBlob.type || 'audio/mp4';
+                let mimeType = audioBlob.type || 'audio/webm';
                 if(mimeType.includes(';')) mimeType = mimeType.split(';')[0];
 
                 const prompt = `You are a medical meeting assistant.
@@ -1245,7 +1254,7 @@
                 Analyze this audio chunk. Update the summary integrating new info.
                 Return pure JSON only: {"transcript": "Brief key points", "summary": "Comprehensive Markdown summary", "mermaid": "Updated Mermaid code"}`;
 
-                let retries = 5; 
+                let retries = 3; 
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     try {
                         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${app.state.keys.voice}`, {
@@ -1265,6 +1274,10 @@
                         
                         app.meetingContext = aiJson.summary || app.meetingContext; 
                         
+                        // 移除 queue 的提示字
+                        const queues = textDiv.querySelectorAll('.status-retrying');
+                        queues.forEach(q => { if(q.innerText.includes('queued')) q.remove(); });
+
                         textDiv.innerHTML += `<div style="padding:16px; background:rgba(255,255,255,0.6); border-radius:16px; margin-top:12px; border: 1px dashed var(--primary); box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
                             <strong style="color:var(--primary); font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px;">📝 Sync Update</strong><br>
                             ${marked.parse(aiJson.summary || aiJson.transcript || "No significant new points detected.")}
@@ -1277,12 +1290,12 @@
                     } catch (e) {
                         const errMsg = e.message || JSON.stringify(e);
                         if (errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-                            let waitTime = 30 * attempt; 
+                            let waitTime = 15 * attempt; 
                             textDiv.innerHTML += `<div class="status-badge status-retrying" style="justify-content:flex-start; margin-top:12px;">⏳ Network busy, auto-retrying in ${waitTime}s...</div>`;
                             textDiv.scrollTop = textDiv.scrollHeight;
                             await new Promise(r => setTimeout(r, waitTime * 1000));
                         } else {
-                            textDiv.innerHTML += `<div class="status-badge status-error" style="justify-content:flex-start; margin-top:12px;">⚠️ Sync failed.</div>`;
+                            textDiv.innerHTML += `<div class="status-badge status-error" style="justify-content:flex-start; margin-top:12px;">⚠️ Sync failed. Unsupported format or unclear audio.</div>`;
                             return;
                         }
                     }
