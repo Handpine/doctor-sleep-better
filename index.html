@@ -6,6 +6,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="DoctorZZZ">
+    
+    <meta name="theme-color" content="#F7FBF8" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#121A16" media="(prefers-color-scheme: dark)">
+    
     <title>DoctorZZZ</title>
     
     <link rel="manifest" href="./manifest.json">
@@ -50,12 +54,7 @@
             --shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
         }
 
-        /* 鎖定背景滾動的專用 class */
-        body.modal-open {
-            overflow: hidden;
-            position: fixed;
-            width: 100%;
-        }
+        body.modal-open { overflow: hidden; touch-action: none; }
 
         body {
             background-color: var(--bg-color); color: var(--text-main); font-family: var(--font-family);
@@ -157,6 +156,7 @@
         .page.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+        /* ✨ Action Sheet 正確修復 */
         .action-sheet-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(18, 26, 22, 0.4); backdrop-filter: blur(6px); z-index: 300; display: none; justify-content: center; align-items: flex-end; }
         .action-sheet { background: var(--bg-color); width: 100%; max-width: 600px; border-radius: 28px 28px 0 0; padding: 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -166,23 +166,32 @@
 
         #mermaid-container { width: 100%; min-height: 200px; overflow-x: auto; background: rgba(255,255,255,0.6); padding: 15px; border-radius: 16px; display: flex; justify-content: center; align-items: center; border: 1px dashed var(--primary);}
 
-        #selection-toolbar { position: absolute; display: none; background: #121A16; color: white; border-radius: 12px; padding: 6px; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.25); white-space: nowrap; transform: translateX(-50%); }
-        #selection-toolbar button { background: transparent; color: white; border: none; padding: 6px 14px; cursor: pointer; font-size: 0.9rem; font-weight: 600;}
-        #selection-toolbar button:first-child { border-right: 1px solid rgba(255,255,255,0.2); }
+        /* ✨ 終極升級：底部懸浮工具列 (防 iOS 跑版) */
+        #selection-toolbar { 
+            position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); 
+            display: none; justify-content: center; align-items: center; gap: 8px;
+            background: rgba(30, 45, 36, 0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 100px; padding: 6px 8px; 
+            z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.3); white-space: nowrap; 
+        }
+        #selection-toolbar button { 
+            background: transparent; color: var(--primary); border: none; 
+            padding: 8px 16px; cursor: pointer; font-size: 0.95rem; font-weight: 600; 
+            border-radius: 100px; transition: background 0.2s;
+        }
+        #selection-toolbar button:active { background: rgba(255,255,255,0.1); }
+        .toolbar-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.2); }
 
         #global-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(18, 26, 22, 0.4); z-index:9998; backdrop-filter: blur(4px); }
 
-        /* ✨ 修復滾動穿透 Bug：優化 modal 捲動區域與邊界 */
         .custom-modal { 
             display:none; position:fixed; top:50%; left:50%; width:90%; max-width:400px; 
-            z-index:9999; text-align:left; margin:0; padding: 28px; 
+            z-index:9999; text-align:left; margin:0; padding: 24px; 
             animation: popInCenter 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; 
             background: var(--card-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); 
             border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 24px 48px rgba(0,0,0,0.2);
-            /* 關鍵修復：限制最大高度，並允許內部滑動，支援 iOS 順暢滾動 */
-            max-height: 80vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            max-height: 75vh; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
         }
-        /* 讓文字置中的 modal 複寫設定 */
         .custom-modal.center-text { text-align: center; }
 
         @keyframes popInCenter { 0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
@@ -219,6 +228,7 @@
     
     <div id="selection-toolbar">
         <button onclick="app.aiLookupSelected()">🔍 AI Guide</button>
+        <div class="toolbar-divider"></div>
         <button onclick="app.webSearchSelected()">🌐 Search</button>
     </div>
 
@@ -270,7 +280,12 @@
                 <input type="password" id="supabase-key" placeholder="Supabase Anon Key">
                 <input type="email" id="email" placeholder="Email Address">
                 <input type="password" id="password" placeholder="Password">
-                <button class="btn" style="width: 100%; justify-content:center; margin-top: 16px; padding: 14px;" onclick="app.login()">Login / Register</button>
+                
+                <div style="text-align: right; margin-top: 6px; margin-bottom: 12px;">
+                    <span style="color:var(--primary); font-size: 0.85rem; font-weight:600; cursor: pointer;" onclick="app.forgotPassword()">Forgot Password?</span>
+                </div>
+
+                <button class="btn" style="width: 100%; justify-content:center; padding: 14px;" onclick="app.login()">Login / Register</button>
             </div>
         </div>
 
@@ -355,6 +370,14 @@
                 
                 <button class="btn" onclick="app.saveSettings()" style="margin-top:10px; width: 100%; justify-content:center;">💾 Save Settings</button>
             </div>
+
+            <div class="card">
+                <h3 style="margin-top:0; margin-bottom:8px; color:var(--primary);">Account Security</h3>
+                <label>Update Password</label>
+                <input type="password" id="new-password-input" placeholder="Enter new password (min. 6 chars)">
+                <button class="btn btn-outline" style="width: 100%; justify-content:center;" onclick="app.changePassword()">Update Password</button>
+            </div>
+
             <div style="display:flex; gap:12px; margin-bottom: 20px;">
                 <button class="btn btn-outline" style="flex:1; justify-content:center; background: var(--card-bg);" onclick="app.toggleTheme()">Theme 🌙</button>
                 <button class="btn btn-danger" style="flex:1; justify-content:center;" onclick="app.logout()">Log Out</button>
@@ -417,8 +440,28 @@
         <label>Bed No.</label><input type="text" id="edit-bed">
         <label>Name</label><input type="text" id="edit-name">
         <label>Diagnosis</label><input type="text" id="edit-diagnosis">
-        <label>Course Summary</label><textarea id="edit-course" rows="6"></textarea>
-        <label>Medications</label><input type="text" id="edit-meds">
+        
+        <label>Underlying Disease (comma separated)</label>
+        <input type="text" id="edit-underlying" placeholder="e.g. HTN, DM2">
+        
+        <label>Course Summary (Markdown allowed)</label>
+        <textarea id="edit-course" rows="4"></textarea>
+        
+        <label>Medications</label>
+        <input type="text" id="edit-meds">
+        
+        <label>Treatment Goal</label>
+        <input type="text" id="edit-goal">
+        
+        <label>Action Items / Todos (One item per line)</label>
+        <textarea id="edit-todos" rows="3" placeholder="Check CBC tomorrow&#10;Consult Cardiology"></textarea>
+        
+        <label>Differential Diagnosis (DDx)</label>
+        <input type="text" id="edit-ddx">
+        
+        <label>Critical Info (Allergies, DNR...)</label>
+        <input type="text" id="edit-critical">
+
         <div style="text-align:right; margin-top: 20px; display:flex; gap:12px;">
             <button class="btn btn-outline" style="flex:1; justify-content:center;" onclick="app.hideModal('modal-edit-patient')">Cancel</button> 
             <button class="btn" style="flex:1; justify-content:center;" onclick="app.saveEditPatient()">💾 Save</button>
@@ -467,7 +510,6 @@
                 reader.readAsDataURL(file);
             }),
 
-            /* ✨ 修復滾動穿透機制：加入 Body Scroll Lock */
             lockScroll: () => { document.body.classList.add('modal-open'); },
             unlockScroll: () => { document.body.classList.remove('modal-open'); },
 
@@ -518,6 +560,7 @@
                 }
             },
 
+            // ✨ 懸浮於畫面底部的防跑版文字工具列
             handleSelectionChange: () => {
                 const selection = window.getSelection();
                 const toolbar = document.getElementById('selection-toolbar');
@@ -526,15 +569,15 @@
                 if (!anchorNode.closest('.selectable-area') && !anchorNode.closest('.detail-content')) return;
                 selectedTextString = selection.toString().trim();
                 selectionRange = selection.getRangeAt(0);
-                const rect = selectionRange.getBoundingClientRect();
-                toolbar.style.display = 'block';
-                toolbar.style.top = `${rect.top + window.scrollY - 45}px`;
-                toolbar.style.left = `${rect.left + (rect.width / 2)}px`;
+                toolbar.style.display = 'flex'; // 只負責顯示，位置交給 CSS 的 Fixed Bottom 處理
             },
             webSearchSelected: () => { window.open(`https://www.google.com/search?q=${encodeURIComponent(selectedTextString)}`, '_blank'); app.closeAllModals(); },
             aiLookupSelected: async () => {
                 if (!app.state.keys.text) return app.showAlert("Please configure Text AI Key in Settings.");
-                app.showModal('ai-result-modal');
+                document.getElementById('global-overlay').style.display = 'block';
+                const modal = document.getElementById('ai-result-modal');
+                modal.style.display = 'block';
+                app.lockScroll();
                 document.getElementById('ai-result-content').innerHTML = '<div class="status-badge status-processing" style="background:transparent; justify-content:flex-start;">Analyzing term...</div>';
                 document.getElementById('btn-save-annotation').style.display = 'none';
                 const prompt = app.state.selectionPrompt || "Explain this medical term briefly in English.";
@@ -576,11 +619,21 @@
             initSupabase: async (url, key) => {
                 try {
                     supabaseClient = window.supabase.createClient(url, key);
+                    
+                    supabaseClient.auth.onAuthStateChange((event, session) => {
+                        if (event === 'PASSWORD_RECOVERY') {
+                            app.showAlert("Please go to Settings to update your new password.", "Password Recovery");
+                            app.navTo('page-settings');
+                        }
+                    });
+
                     const { data } = await supabaseClient.auth.getSession();
                     if(data && data.session) await app.onLoginSuccess(data.session.user);
                     else app.showLoginPage();
                 } catch(e) { app.showLoginPage(); }
             },
+            
+            // ✨ 修正：精準的登入與註冊錯誤判斷邏輯
             login: async () => {
                 const url = document.getElementById('supabase-url').value;
                 const key = document.getElementById('supabase-key').value;
@@ -589,12 +642,60 @@
                 if (!url || !key) return app.showAlert('Missing URL or Anon Key', 'Setup Required');
                 localStorage.setItem(DB_KEY, JSON.stringify({ supabaseUrl: url, supabaseKey: key }));
                 supabaseClient = window.supabase.createClient(url, key);
+                
+                // 先嘗試登入
                 const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                
                 if(error) {
-                    const { error: sError } = await supabaseClient.auth.signUp({ email, password });
-                    if(sError) app.showAlert(sError.message, "Auth Error"); else app.showAlert('Registration success! Please check your email inbox to verify.', 'Welcome');
-                } else app.onLoginSuccess(data.user);
+                    // 如果錯誤原因是密碼錯誤或帳號無效，不要嘗試註冊
+                    if (error.message.includes("Invalid login credentials") || error.message.includes("Invalid credentials")) {
+                        return app.showAlert('Incorrect email or password. Please try again.', 'Login Failed');
+                    }
+                    
+                    // 若並非密碼錯誤，嘗試註冊新帳號
+                    const { data: sData, error: sError } = await supabaseClient.auth.signUp({ email, password });
+                    if(sError) {
+                        if (sError.message.includes("already registered")) {
+                            return app.showAlert('Incorrect password for this email.', 'Login Failed');
+                        }
+                        app.showAlert(sError.message, "Auth Error"); 
+                    } else {
+                        app.showAlert('Registration success! Please check your email inbox to verify.', 'Welcome');
+                    }
+                } else {
+                    app.onLoginSuccess(data.user);
+                }
             },
+            
+            forgotPassword: async () => {
+                const email = document.getElementById('email').value;
+                if(!email) return app.showAlert("Please enter your Email Address first.", "Email Required");
+                const url = document.getElementById('supabase-url').value;
+                const key = document.getElementById('supabase-key').value;
+                if (!url || !key) return app.showAlert('Missing URL or Anon Key', 'Setup Required');
+                
+                supabaseClient = window.supabase.createClient(url, key);
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                    redirectTo: window.location.origin + window.location.pathname
+                });
+                
+                if (error) app.showAlert(error.message, "Error");
+                else app.showAlert("A password reset link has been sent to your email. Please check your inbox.", "Email Sent");
+            },
+
+            changePassword: async () => {
+                const newPass = document.getElementById('new-password-input').value;
+                if(!newPass || newPass.length < 6) return app.showAlert("Password must be at least 6 characters.", "Invalid Input");
+                
+                const { error } = await supabaseClient.auth.updateUser({ password: newPass });
+                if (error) {
+                    app.showAlert("Failed to update password: " + error.message, "Error");
+                } else {
+                    app.showAlert("Your password has been updated successfully.", "Success");
+                    document.getElementById('new-password-input').value = ''; 
+                }
+            },
+
             onLoginSuccess: async (user) => {
                 currentUser = user;
                 document.getElementById('page-loading').classList.remove('active');
@@ -614,14 +715,21 @@
                 if(!currentUser) return;
                 const { data } = await supabaseClient.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle();
                 if (data) {
+                    let safeTextModel = data.model_text || 'gemini-2.0-flash';
+                    let safeVoiceModel = data.model_voice || 'gemini-2.0-flash';
+                    if (safeTextModel === 'gemini-2.5-flash') safeTextModel = 'gemini-2.0-flash';
+                    if (safeVoiceModel === 'gemini-2.5-flash') safeVoiceModel = 'gemini-2.0-flash';
+
                     document.getElementById('key-text').value = data.gemini_key_text || '';
                     document.getElementById('key-voice').value = data.gemini_key_voice || '';
-                    document.getElementById('model-text').value = data.model_text || 'gemini-2.0-flash';
-                    document.getElementById('model-voice').value = data.model_voice || 'gemini-2.0-flash';
+                    document.getElementById('model-text').value = safeTextModel;
+                    document.getElementById('model-voice').value = safeVoiceModel;
+                    
                     app.state.keys.text = data.gemini_key_text || '';
                     app.state.keys.voice = data.gemini_key_voice || '';
-                    app.state.models.text = data.model_text || 'gemini-2.0-flash';
-                    app.state.models.voice = data.model_voice || 'gemini-2.0-flash';
+                    app.state.models.text = safeTextModel;
+                    app.state.models.voice = safeVoiceModel;
+                    
                     if(document.getElementById('prompt-selection')) app.state.selectionPrompt = document.getElementById('prompt-selection').value;
                 }
             },
@@ -830,6 +938,7 @@
                 });
             },
 
+            // ✨ 強制 Prompt 輸出時間軸條列清單
             processUpdateData: async (patientId, oldData, newText, newImageBase64) => {
                 if (!app.state.keys.text) {
                     await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
@@ -837,7 +946,7 @@
                 }
                 const oldMdStr = JSON.stringify(oldData.medical_data || {});
                 const prompt = `You are a clinical assistant. Merge the [New Progress Note/Image] into the [Existing Patient Data]. 
-                Return strictly pure JSON matching this structure: {"diagnosis":"...","underlying":["..."],"course":"...(Markdown format)","medications":"...","goal":"...","todos":["..."],"ddx":"...","critical":"..."}
+                Return strictly pure JSON matching this structure: {"diagnosis":"...","underlying":["..."],"course":"...(Strictly output a chronological bulleted list of symptoms, treatments, and events. NO large paragraphs. Use Markdown.)","medications":"...","goal":"...","todos":["..."],"ddx":"...","critical":"..."}
                 [Existing Patient Data]: ${oldMdStr}`;
                 
                 const parts = [{ text: prompt }]; 
@@ -893,22 +1002,39 @@
                 document.getElementById('edit-bed').value = p.bed_no || '';
                 document.getElementById('edit-name').value = basic.name || '';
                 document.getElementById('edit-diagnosis').value = md.diagnosis || '';
+                
+                document.getElementById('edit-underlying').value = Array.isArray(md.underlying) ? md.underlying.join(', ') : (md.underlying || '');
                 document.getElementById('edit-course').value = md.course || '';
                 document.getElementById('edit-meds').value = md.medications || '';
+                document.getElementById('edit-goal').value = md.goal || '';
+                document.getElementById('edit-todos').value = Array.isArray(md.todos) ? md.todos.join('\n') : (md.todos || '');
+                document.getElementById('edit-ddx').value = md.ddx || '';
+                document.getElementById('edit-critical').value = md.critical || '';
+                
                 app.showModal('modal-edit-patient');
             },
+            
             saveEditPatient: async () => {
                 const bed = document.getElementById('edit-bed').value;
-                const name = document.getElementById('edit-name').value;
-                const diag = document.getElementById('edit-diagnosis').value;
-                const course = document.getElementById('edit-course').value;
-                const meds = document.getElementById('edit-meds').value;
                 if(!bed) return app.showAlert('Bed No. is required.', "Input Missing");
                 app.hideModal('modal-edit-patient');
 
                 let newMd = selectedPatientData.medical_data || {};
-                newMd.diagnosis = diag; newMd.course = course; newMd.medications = meds;
-                let newBasic = selectedPatientData.basic_info || {}; newBasic.name = name;
+                newMd.diagnosis = document.getElementById('edit-diagnosis').value;
+                newMd.course = document.getElementById('edit-course').value;
+                newMd.medications = document.getElementById('edit-meds').value;
+                newMd.goal = document.getElementById('edit-goal').value;
+                newMd.ddx = document.getElementById('edit-ddx').value;
+                newMd.critical = document.getElementById('edit-critical').value;
+                
+                const rawUnderlying = document.getElementById('edit-underlying').value;
+                newMd.underlying = rawUnderlying ? rawUnderlying.split(',').map(s=>s.trim()).filter(s=>s) : [];
+                
+                const rawTodos = document.getElementById('edit-todos').value;
+                newMd.todos = rawTodos ? rawTodos.split('\n').map(s=>s.trim()).filter(s=>s) : [];
+
+                let newBasic = selectedPatientData.basic_info || {}; 
+                newBasic.name = document.getElementById('edit-name').value;
 
                 const { error } = await supabaseClient.from('patients').update({ 
                     bed_no: bed, basic_info: newBasic, medical_data: newMd, updated_at: new Date(), status: 'read'
@@ -918,12 +1044,13 @@
                 app.loadPatients();
             },
 
+            // ✨ 強制 Prompt 輸出時間軸條列清單
             processPatientData: async (patientId, text, imageBase64) => {
                 if (!app.state.keys.text) {
                     await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
                     app.showAlert('Text AI Key is missing. Check Settings.', "API Error"); return;
                 }
-                const prompt = `Analyze clinical notes, return JSON: {"diagnosis":"Main Dx","underlying":["Hx"],"course":"Markdown","medications":"Meds","goal":"Goal","todos":["Plan"],"ddx":"DDx","critical":"Allergy/DNR"}`;
+                const prompt = `Analyze clinical notes, return JSON: {"diagnosis":"Main Dx","underlying":["Hx"],"course":"Strictly output a chronological bulleted list of symptoms, treatments, and events. NO large paragraphs. Use Markdown.","medications":"Meds","goal":"Goal","todos":["Plan"],"ddx":"DDx","critical":"Allergy/DNR"}`;
                 const parts = [{ text: prompt }]; if (text) parts.push({ text: `Notes: ${text}` }); if (imageBase64) parts.push({ inline_data: { mime_type: "image/jpeg", data: imageBase64 } });
                 
                 let retries = 4;
@@ -976,11 +1103,12 @@
             cancelLongPress: () => { 
                 if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } 
             },
+            // ✨ 已修正長按選單跑版 Bug
             showContextMenu: () => { 
                 if(navigator.vibrate) navigator.vibrate(50); 
                 document.getElementById('context-title').innerText = `Manage Bed ${selectedPatientData.bed_no}`;
-                document.getElementById('context-menu-overlay').style.display = 'flex'; 
                 app.lockScroll();
+                document.getElementById('context-menu-overlay').style.display = 'flex'; 
             },
             hideContextMenu: () => { 
                 document.getElementById('context-menu-overlay').style.display = 'none'; 
@@ -1040,11 +1168,12 @@
                     app.showArchiveContextMenu(); longPressTimer = null; 
                 }, 600);
             },
+            // ✨ 已修正長按選單跑版 Bug
             showArchiveContextMenu: () => {
                 if(navigator.vibrate) navigator.vibrate(50);
                 document.getElementById('archive-context-title').innerText = `Archive: ${selectedArchiveData.title}`;
-                document.getElementById('archive-context-menu-overlay').style.display = 'flex';
                 app.lockScroll();
+                document.getElementById('archive-context-menu-overlay').style.display = 'flex';
             },
             hideArchiveContextMenu: () => { 
                 document.getElementById('archive-context-menu-overlay').style.display = 'none'; 
@@ -1174,16 +1303,6 @@
                 if (!el || el.offsetParent === null) return;
                 el.removeAttribute('data-processed'); el.innerHTML = ''; el.setAttribute('data-code', code);
                 try { const { svg } = await mermaid.render(`m-${Date.now()}`, code); el.innerHTML = svg; } catch (e) {}
-            },
-            showModal: (id) => {
-                app.lockScroll();
-                document.getElementById('global-overlay').style.display = 'block';
-                document.getElementById(id).style.display = 'block';
-            },
-            hideModal: (id) => {
-                app.unlockScroll();
-                document.getElementById('global-overlay').style.display = 'none';
-                document.getElementById(id).style.display = 'none';
             },
             toggleTheme: () => document.body.setAttribute('data-theme', document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'),
         };
