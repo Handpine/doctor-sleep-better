@@ -344,7 +344,10 @@
                     </div>
                 </div>
                 <div class="card">
-                    <h3 style="margin-top:0; margin-bottom:16px; color: var(--primary);">Visual Map</h3>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <h3 style="margin:0; color: var(--primary);">Visual Map</h3>
+                        <button class="btn btn-sm btn-outline" onclick="app.exportMermaid()">🖼️ Export SVG</button>
+                    </div>
                     <div id="mermaid-container" class="mermaid"></div>
                 </div>
             </div>
@@ -356,15 +359,15 @@
                 <h3 style="margin-top:0; margin-bottom:8px; color:var(--primary);">API Configuration</h3>
                 
                 <label>Text AI Key (Clinical Notes)</label><input type="password" id="key-text" placeholder="AI Studio Key for text">
-                <label>Text Model</label><input type="text" id="model-text" placeholder="gemini-2.0-flash" value="gemini-2.0-flash">
+                <label>Text Model</label><input type="text" id="model-text" placeholder="gemini-2.0-flash">
                 
                 <hr style="border:0; border-top:1px dashed var(--border); margin:24px 0;">
                 
                 <label>Voice AI Key (Meeting Ghost)</label><input type="password" id="key-voice" placeholder="AI Studio Key for voice">
-                <label>Voice Model</label><input type="text" id="model-voice" placeholder="gemini-2.0-flash" value="gemini-2.0-flash">
+                <label>Voice Model</label><input type="text" id="model-voice" placeholder="gemini-2.0-flash">
                 
                 <label style="margin-top: 20px;">AI Guide Prompt (Highlight Tool)</label>
-                <textarea id="prompt-selection" rows="2">Please explain this medical term briefly in English.</textarea>
+                <textarea id="prompt-selection" rows="2" placeholder="e.g. Please explain this medical term briefly in English."></textarea>
                 
                 <button class="btn" onclick="app.saveSettings()" style="margin-top:10px; width: 100%; justify-content:center;">💾 Save Settings</button>
             </div>
@@ -478,7 +481,6 @@
 
     <script>
         const DB_KEY = 'dsb_local_config';
-        // ✨ Supabase 單例模式 (Singleton)，解決效能浪費與警告
         let supabaseClient = null; 
         let currentUser = null, currentWardId = null;
         let longPressTimer = null, selectedPatientId = null, selectedPatientData = null;
@@ -493,7 +495,6 @@
             state: { keys: { text: '', voice: '' }, models: { text: 'gemini-2.0-flash', voice: 'gemini-2.0-flash' }, selectionPrompt: "" },
             meetingContext: "", 
             
-            // ✨ 加長車距的鋼鐵佇列系統 (6秒冷卻，確保永遠不超過 10 RPM)
             apiQueue: Promise.resolve(),
             enqueueApiCall: (apiFunction) => {
                 app.apiQueue = app.apiQueue.then(async () => {
@@ -549,7 +550,6 @@
                 if (result && callbackToRun) callbackToRun(); 
             },
 
-            // ✨ 單一獲取 Supabase 連線的方法
             getSupabase: (url, key) => {
                 if (!supabaseClient) {
                     supabaseClient = window.supabase.createClient(url, key);
@@ -717,42 +717,77 @@
                     localStorage.removeItem(DB_KEY); location.reload(); 
                 });
             },
+            
+            // ✨ 完美存取 DB 中 prompt_selection 欄位的設定
             loadSettings: async () => {
                 if(!currentUser || !supabaseClient) return;
+                
                 const { data } = await supabaseClient.from('user_settings').select('*').eq('user_id', currentUser.id).maybeSingle();
+                
                 if (data) {
-                    let safeTextModel = data.model_text || 'gemini-2.0-flash';
-                    let safeVoiceModel = data.model_voice || 'gemini-2.0-flash';
-                    if (safeTextModel === 'gemini-2.5-flash') safeTextModel = 'gemini-2.0-flash';
-                    if (safeVoiceModel === 'gemini-2.5-flash') safeVoiceModel = 'gemini-2.0-flash';
-
                     document.getElementById('key-text').value = data.gemini_key_text || '';
                     document.getElementById('key-voice').value = data.gemini_key_voice || '';
-                    document.getElementById('model-text').value = safeTextModel;
-                    document.getElementById('model-voice').value = safeVoiceModel;
+                    document.getElementById('model-text').value = data.model_text || 'gemini-2.0-flash';
+                    document.getElementById('model-voice').value = data.model_voice || 'gemini-2.0-flash';
+                    
+                    // ✨ 讀取新欄位 prompt_selection
+                    if (data.prompt_selection) {
+                        document.getElementById('prompt-selection').value = data.prompt_selection;
+                        app.state.selectionPrompt = data.prompt_selection;
+                    } else {
+                        app.state.selectionPrompt = document.getElementById('prompt-selection').placeholder;
+                    }
                     
                     app.state.keys.text = data.gemini_key_text || '';
                     app.state.keys.voice = data.gemini_key_voice || '';
-                    app.state.models.text = safeTextModel;
-                    app.state.models.voice = safeVoiceModel;
-                    
-                    if(document.getElementById('prompt-selection')) app.state.selectionPrompt = document.getElementById('prompt-selection').value;
+                    app.state.models.text = data.model_text || 'gemini-2.0-flash';
+                    app.state.models.voice = data.model_voice || 'gemini-2.0-flash';
+                } else {
+                     app.state.selectionPrompt = document.getElementById('prompt-selection').placeholder;
                 }
             },
+            
             saveSettings: async () => {
                 const textKey = document.getElementById('key-text').value;
                 const voiceKey = document.getElementById('key-voice').value;
                 const textModel = document.getElementById('model-text').value || 'gemini-2.0-flash';
                 const voiceModel = document.getElementById('model-voice').value || 'gemini-2.0-flash';
-                app.state.selectionPrompt = document.getElementById('prompt-selection').value;
+                const promptVal = document.getElementById('prompt-selection').value;
                 
+                app.state.selectionPrompt = promptVal; // 更新應用狀態
+
                 if(!supabaseClient) return;
-                const updates = { user_id: currentUser.id, gemini_key_text: textKey, gemini_key_voice: voiceKey, model_text: textModel, model_voice: voiceModel, updated_at: new Date() };
-                const { error } = await supabaseClient.from('user_settings').upsert(updates);
-                if (!error) {
-                    app.state.keys.text = textKey; app.state.keys.voice = voiceKey; app.state.models.text = textModel; app.state.models.voice = voiceModel;
+
+                const payload = { 
+                    user_id: currentUser.id, 
+                    gemini_key_text: textKey, 
+                    gemini_key_voice: voiceKey, 
+                    model_text: textModel, 
+                    model_voice: voiceModel, 
+                    prompt_selection: promptVal, // ✨ 寫入新欄位 prompt_selection
+                    updated_at: new Date() 
+                };
+                
+                const { data: existing } = await supabaseClient.from('user_settings').select('id').eq('user_id', currentUser.id).maybeSingle();
+                
+                let dbError = null;
+                if (existing) {
+                    const res = await supabaseClient.from('user_settings').update(payload).eq('user_id', currentUser.id);
+                    dbError = res.error;
+                } else {
+                    const res = await supabaseClient.from('user_settings').insert([payload]);
+                    dbError = res.error;
+                }
+
+                if (!dbError) {
+                    app.state.keys.text = textKey; 
+                    app.state.keys.voice = voiceKey; 
+                    app.state.models.text = textModel; 
+                    app.state.models.voice = voiceModel;
                     app.showAlert('Preferences have been saved successfully.', 'Settings Updated');
-                } else app.showAlert('Failed to save: ' + error.message, 'Database Error');
+                } else {
+                    app.showAlert('Failed to save to database: ' + dbError.message, 'Database Error');
+                }
             },
 
             navTo: (pageId) => {
@@ -1217,7 +1252,6 @@
                 });
             },
 
-            // ✨ 毒藥任務停損機制：語音處理出錯不再綁架佇列
             toggleRecording: async () => {
                 const btn = document.getElementById('record-btn');
                 const textDiv = document.getElementById('meeting-text');
@@ -1231,14 +1265,12 @@
 
                         mediaRecorder.ondataavailable = async (e) => {
                             if (e.data.size > 0) {
-                                // 動態抓取音訊格式
                                 let actualMime = mediaRecorder.mimeType || 'audio/webm';
                                 const blob = new Blob([e.data], { type: actualMime }); 
                                 
                                 textDiv.innerHTML += `<div class="status-badge status-retrying" style="justify-content:flex-start; margin-top:12px;">⏳ Audio chunk queued...</div>`;
                                 textDiv.scrollTop = textDiv.scrollHeight;
 
-                                // 進入排隊系統
                                 app.enqueueApiCall(async () => {
                                     await app.processAudioAI(blob);
                                 });
@@ -1271,7 +1303,6 @@
                 Analyze this audio chunk. Update the summary integrating new info.
                 Return pure JSON only: {"transcript": "Brief key points", "summary": "Comprehensive Markdown summary", "mermaid": "Updated Mermaid code"}`;
 
-                // ✨ 毒藥任務保護：語音最多只重試 2 次，失敗就果斷放棄，不拖累後面的純文字
                 let retries = 2; 
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     try {
@@ -1312,7 +1343,6 @@
                             textDiv.scrollTop = textDiv.scrollHeight;
                             await new Promise(r => setTimeout(r, waitTime * 1000));
                         } else {
-                            // ✨ 若判定為無法解析的格式，直接中斷任務
                             textDiv.innerHTML += `<div class="status-badge status-error" style="justify-content:flex-start; margin-top:12px;">⚠️ Sync failed. Unsupported format.</div>`;
                             return;
                         }
@@ -1327,6 +1357,18 @@
                 a.href = URL.createObjectURL(blob);
                 a.download = `Meeting_${new Date().toISOString().slice(0,10)}.md`;
                 a.click();
+            },
+
+            exportMermaid: () => {
+                const svg = document.querySelector('#mermaid-container svg');
+                if (!svg) return app.showAlert('No visual map available to export.', 'Error');
+                const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `VisualMap_${new Date().toISOString().slice(0,10)}.svg`;
+                a.click();
+                URL.revokeObjectURL(url);
             },
 
             renderMermaid: async (code) => {
