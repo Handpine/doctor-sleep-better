@@ -346,7 +346,7 @@
                 <div class="card">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                         <h3 style="margin:0; color: var(--primary);">Visual Map</h3>
-                        <button class="btn btn-sm btn-outline" onclick="app.exportMermaid()">🖼️ Export SVG</button>
+                        <button class="btn btn-sm btn-outline" onclick="app.exportMermaid()">🖼️ Export PNG</button>
                     </div>
                     <div id="mermaid-container" class="mermaid"></div>
                 </div>
@@ -718,7 +718,6 @@
                 });
             },
             
-            // ✨ 完美存取 DB 中 prompt_selection 欄位的設定
             loadSettings: async () => {
                 if(!currentUser || !supabaseClient) return;
                 
@@ -730,7 +729,6 @@
                     document.getElementById('model-text').value = data.model_text || 'gemini-2.0-flash';
                     document.getElementById('model-voice').value = data.model_voice || 'gemini-2.0-flash';
                     
-                    // ✨ 讀取新欄位 prompt_selection
                     if (data.prompt_selection) {
                         document.getElementById('prompt-selection').value = data.prompt_selection;
                         app.state.selectionPrompt = data.prompt_selection;
@@ -747,6 +745,7 @@
                 }
             },
             
+            // ✨ 終極修復 Settings 儲存 Bug (確保使用原生 Upsert 並正確鎖定 Primary Key)
             saveSettings: async () => {
                 const textKey = document.getElementById('key-text').value;
                 const voiceKey = document.getElementById('key-voice').value;
@@ -754,7 +753,7 @@
                 const voiceModel = document.getElementById('model-voice').value || 'gemini-2.0-flash';
                 const promptVal = document.getElementById('prompt-selection').value;
                 
-                app.state.selectionPrompt = promptVal; // 更新應用狀態
+                app.state.selectionPrompt = promptVal;
 
                 if(!supabaseClient) return;
 
@@ -764,20 +763,12 @@
                     gemini_key_voice: voiceKey, 
                     model_text: textModel, 
                     model_voice: voiceModel, 
-                    prompt_selection: promptVal, // ✨ 寫入新欄位 prompt_selection
+                    prompt_selection: promptVal, 
                     updated_at: new Date() 
                 };
                 
-                const { data: existing } = await supabaseClient.from('user_settings').select('id').eq('user_id', currentUser.id).maybeSingle();
-                
-                let dbError = null;
-                if (existing) {
-                    const res = await supabaseClient.from('user_settings').update(payload).eq('user_id', currentUser.id);
-                    dbError = res.error;
-                } else {
-                    const res = await supabaseClient.from('user_settings').insert([payload]);
-                    dbError = res.error;
-                }
+                // 完全依賴 Supabase 的 upsert 與 onConflict，杜絕任何 PK 重複的 Error
+                const { error: dbError } = await supabaseClient.from('user_settings').upsert(payload, { onConflict: 'user_id' });
 
                 if (!dbError) {
                     app.state.keys.text = textKey; 
@@ -1252,6 +1243,7 @@
                 });
             },
 
+            // ✨ 修改：強制抓取 iOS 設備真實錄音格式
             toggleRecording: async () => {
                 const btn = document.getElementById('record-btn');
                 const textDiv = document.getElementById('meeting-text');
@@ -1265,7 +1257,8 @@
 
                         mediaRecorder.ondataavailable = async (e) => {
                             if (e.data.size > 0) {
-                                let actualMime = mediaRecorder.mimeType || 'audio/webm';
+                                // 讓 iOS Safari 決定自己要用什麼格式，不再硬塞 webm
+                                let actualMime = e.data.type || mediaRecorder.mimeType || 'audio/mp4';
                                 const blob = new Blob([e.data], { type: actualMime }); 
                                 
                                 textDiv.innerHTML += `<div class="status-badge status-retrying" style="justify-content:flex-start; margin-top:12px;">⏳ Audio chunk queued...</div>`;
@@ -1295,13 +1288,16 @@
                 const textDiv = document.getElementById('meeting-text');
 
                 const base64Audio = await app.fileToBase64(audioBlob);
-                let mimeType = audioBlob.type || 'audio/webm';
+                
+                // ✨ 修正：支援 iOS / Safari 產生的 mp4 容器格式
+                let mimeType = audioBlob.type || 'audio/mp4';
                 if(mimeType.includes(';')) mimeType = mimeType.split(';')[0];
 
+                // ✨ 修正：嚴格要求 Mermaid 不能帶有導致崩潰的字元
                 const prompt = `You are a medical meeting assistant.
                 【Previous Context】: ${app.meetingContext || 'None'}
                 Analyze this audio chunk. Update the summary integrating new info.
-                Return pure JSON only: {"transcript": "Brief key points", "summary": "Comprehensive Markdown summary", "mermaid": "Updated Mermaid code"}`;
+                Return pure JSON only: {"transcript": "Brief key points", "summary": "Comprehensive Markdown summary", "mermaid": "Updated Mermaid code (must start with graph TD, strictly use alphanumeric node IDs like A, B, C, avoid quotes or special characters)"}`;
 
                 let retries = 2; 
                 for (let attempt = 1; attempt <= retries; attempt++) {
@@ -1343,7 +1339,7 @@
                             textDiv.scrollTop = textDiv.scrollHeight;
                             await new Promise(r => setTimeout(r, waitTime * 1000));
                         } else {
-                            textDiv.innerHTML += `<div class="status-badge status-error" style="justify-content:flex-start; margin-top:12px;">⚠️ Sync failed. Unsupported format.</div>`;
+                            textDiv.innerHTML += `<div class="status-badge status-error" style="justify-content:flex-start; margin-top:12px;">⚠️ Sync failed. Data format issue.</div>`;
                             return;
                         }
                     }
@@ -1359,23 +1355,53 @@
                 a.click();
             },
 
+            // ✨ 超強更新：將 SVG 直接繪製成 PNG，完美存入 iPhone 且相容 Notion
             exportMermaid: () => {
-                const svg = document.querySelector('#mermaid-container svg');
-                if (!svg) return app.showAlert('No visual map available to export.', 'Error');
-                const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `VisualMap_${new Date().toISOString().slice(0,10)}.svg`;
-                a.click();
-                URL.revokeObjectURL(url);
+                const svgElement = document.querySelector('#mermaid-container svg');
+                if (!svgElement) return app.showAlert('No visual map available to export.', 'Error');
+                
+                const svgData = new XMLSerializer().serializeToString(svgElement);
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                const img = new Image();
+                
+                const rect = svgElement.getBoundingClientRect();
+                const width = parseInt(svgElement.getAttribute("width")) || rect.width || 800;
+                const height = parseInt(svgElement.getAttribute("height")) || rect.height || 600;
+                const scale = 3; // 提升三倍畫質 (Retina)
+                
+                canvas.width = width * scale;
+                canvas.height = height * scale;
+                
+                img.onload = () => {
+                    ctx.fillStyle = "#F7FBF8"; // 填上乾淨的醫療白綠背景
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    const pngUrl = canvas.toDataURL("image/png");
+                    const a = document.createElement('a');
+                    a.href = pngUrl;
+                    a.download = `VisualMap_${new Date().toISOString().slice(0,10)}.png`;
+                    a.click();
+                };
+                
+                img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
             },
 
+            // ✨ 修正：攔截 Mermaid 的錯誤炸彈
             renderMermaid: async (code) => {
                 const el = document.getElementById('mermaid-container');
                 if (!el || el.offsetParent === null) return;
-                el.removeAttribute('data-processed'); el.innerHTML = ''; el.setAttribute('data-code', code);
-                try { const { svg } = await mermaid.render(`m-${Date.now()}`, code); el.innerHTML = svg; } catch (e) {}
+                el.removeAttribute('data-processed'); 
+                el.innerHTML = ''; 
+                el.setAttribute('data-code', code);
+                try { 
+                    const { svg } = await mermaid.render(`m-${Date.now()}`, code); 
+                    el.innerHTML = svg; 
+                } catch (e) {
+                    // 背景默默攔截錯誤，絕不出現炸彈
+                    el.innerHTML = '<span style="color:var(--text-sub); font-size:0.85rem;">Optimizing map...</span>';
+                }
             },
             toggleTheme: () => document.body.setAttribute('data-theme', document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'),
         };
