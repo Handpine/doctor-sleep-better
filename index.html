@@ -540,22 +540,19 @@
             },
             showAlert: (msg, title="Notification") => {
                 document.getElementById('alert-title').innerText = title;
-                document.getElementById('alert-message').innerText = msg; // 一般警告維持純文字防護
+                document.getElementById('alert-message').innerText = msg;
                 app.showModal('custom-alert');
             },
             
-            // ✨ 專門為 AI 筆記打造的完美 Markdown 顯示器
             showSavedNote: (note, keyword) => {
                 document.getElementById('global-overlay').style.display = 'block';
                 const modal = document.getElementById('ai-result-modal');
                 modal.style.display = 'block';
                 app.lockScroll();
                 
-                // 動態修改標題為單字，並完美渲染 Markdown
                 document.getElementById('ai-insight-title').innerText = keyword;
                 document.getElementById('ai-result-content').innerHTML = marked.parse(note);
                 
-                // 隱藏儲存按鈕，因為已經是儲存過的了
                 document.getElementById('btn-save-annotation').style.display = 'none';
             },
 
@@ -605,6 +602,56 @@
                 }
             },
 
+            // ✨ 無損渲染技術 (DOM Walker)：在背景自動尋找並高亮雲端註解
+            applyAnnotations: (element, annotations) => {
+                if (!annotations || !annotations.length) return;
+                
+                // 依長度排序，確保「長單字」優先比對，不會被「短單字」切斷
+                annotations.sort((a, b) => b.term.length - a.term.length);
+                
+                const terms = annotations.map(a => {
+                    let t = a.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    if (/^\w/.test(a.term)) t = '\\b' + t;
+                    if (/\w$/.test(a.term)) t = t + '\\b';
+                    return t;
+                });
+                
+                const regex = new RegExp(`(${terms.join('|')})`, 'gi');
+                const noteMap = {};
+                annotations.forEach(a => noteMap[a.term.toLowerCase()] = a.note);
+
+                const walk = (node) => {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        const matches = node.nodeValue.match(regex);
+                        if (matches) {
+                            const parent = node.parentNode;
+                            const fragments = node.nodeValue.split(regex);
+                            
+                            fragments.forEach(frag => {
+                                const lowerFrag = frag.toLowerCase();
+                                if (noteMap[lowerFrag] !== undefined) {
+                                    const span = document.createElement('span');
+                                    span.className = 'ai-note-link';
+                                    span.textContent = frag;
+                                    span.onclick = (e) => {
+                                        e.stopPropagation();
+                                        app.showSavedNote(noteMap[lowerFrag], frag);
+                                    };
+                                    parent.insertBefore(span, node);
+                                } else if (frag.length > 0) {
+                                    parent.insertBefore(document.createTextNode(frag), node);
+                                }
+                            });
+                            parent.removeChild(node);
+                        }
+                    } else if (node.nodeType === Node.ELEMENT_NODE && node.nodeName !== 'SPAN') {
+                        Array.from(node.childNodes).forEach(walk);
+                    }
+                };
+                
+                Array.from(element.childNodes).forEach(walk);
+            },
+
             handleSelectionChange: () => {
                 const selection = window.getSelection();
                 const toolbar = document.getElementById('selection-toolbar');
@@ -624,7 +671,7 @@
                 modal.style.display = 'block';
                 app.lockScroll();
                 
-                document.getElementById('ai-insight-title').innerText = "AI Insight"; // 初始化標題
+                document.getElementById('ai-insight-title').innerText = "AI Insight"; 
                 document.getElementById('ai-result-content').innerHTML = '<div class="status-badge status-processing" style="background:transparent; justify-content:flex-start;">Analyzing term...</div>';
                 document.getElementById('btn-save-annotation').style.display = 'none';
                 
@@ -649,12 +696,13 @@
             saveAnnotation: () => {
                 if (!selectionRange) return;
                 const note = document.getElementById('btn-save-annotation').dataset.note;
+                const term = selectedTextString; // 擷取當下選取的單字
+                
                 const span = document.createElement('span');
                 span.className = 'ai-note-link';
-                span.innerText = selectedTextString;
+                span.innerText = term;
                 span.title = 'Click to view AI insight'; 
                 
-                // ✨ 修正：點擊儲存的單字時，呼叫專屬的高級 Markdown 顯示器
                 span.onclick = (e) => { 
                     e.stopPropagation(); 
                     app.showSavedNote(note, span.innerText); 
@@ -663,6 +711,30 @@
                 selectionRange.deleteContents();
                 selectionRange.insertNode(span);
                 app.closeAllModals();
+
+                // ✨ 雲端回寫機制：將單字與註解存入 JSON
+                if (selectedPatientId && selectedPatientData && selectedPatientData.medical_data) {
+                    if (!selectedPatientData.medical_data.annotations) {
+                        selectedPatientData.medical_data.annotations = [];
+                    }
+                    // 檢查是否已經存過這個單字，有的話就覆蓋新解釋，沒有就新增
+                    const existingIdx = selectedPatientData.medical_data.annotations.findIndex(a => a.term.toLowerCase() === term.toLowerCase());
+                    if (existingIdx >= 0) {
+                        selectedPatientData.medical_data.annotations[existingIdx].note = note;
+                    } else {
+                        selectedPatientData.medical_data.annotations.push({ term, note });
+                    }
+                    
+                    // 背景默默上傳 Supabase，不干擾使用者操作
+                    if (supabaseClient) {
+                        supabaseClient.from('patients')
+                            .update({ medical_data: selectedPatientData.medical_data })
+                            .eq('id', selectedPatientId)
+                            .then(({error}) => {
+                                if (error) console.error("Failed to save annotation to cloud:", error);
+                            });
+                    }
+                }
             },
 
             showLoginPage: () => {
@@ -910,7 +982,13 @@
                         renderSec('Differential Diagnosis', md.ddx) + 
                         renderSec('Critical Info', md.critical);
                 
-                document.getElementById('detail-content-area').innerHTML = html;
+                const contentArea = document.getElementById('detail-content-area');
+                contentArea.innerHTML = html;
+
+                // ✨ 呼叫掃描機器人，將雲端記憶的註解重新高亮在畫面上
+                if (md.annotations && md.annotations.length > 0) {
+                    app.applyAnnotations(contentArea, md.annotations);
+                }
 
                 document.getElementById('btn-detail-back').onclick = () => {
                     if(currentDetailSource === 'archives') app.navTo('page-archives');
@@ -1034,7 +1112,14 @@
                         if (!result.candidates) throw new Error("AI returned no content.");
                         
                         let aiText = result.candidates[0].content.parts[0].text;
-                        await supabaseClient.from('patients').update({ medical_data: JSON.parse(aiText), status: 'done', updated_at: new Date() }).eq('id', patientId);
+                        let parsedAI = JSON.parse(aiText);
+                        
+                        // ✨ AI 融合資料時，強制保留舊的 Annotations
+                        if (oldData.medical_data && oldData.medical_data.annotations) {
+                            parsedAI.annotations = oldData.medical_data.annotations;
+                        }
+
+                        await supabaseClient.from('patients').update({ medical_data: parsedAI, status: 'done', updated_at: new Date() }).eq('id', patientId);
                         app.loadPatients();
                         return; 
                         
