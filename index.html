@@ -91,7 +91,12 @@
         }
         
         .patient-card { border-left: 4px solid var(--primary); }
-        .patient-card:active, .archive-card:active { transform: scale(0.97); box-shadow: 0 4px 16px rgba(104, 190, 141, 0.05); }
+        /* 確保 ward-card 也有點擊反饋且禁用預設選取 */
+        .patient-card:active, .archive-card:active, .ward-card:active { transform: scale(0.97); box-shadow: 0 4px 16px rgba(104, 190, 141, 0.05); }
+        .patient-card, .archive-card, .ward-card {
+            -webkit-user-select: none; user-select: none;
+            -webkit-touch-callout: none;
+        }
 
         .btn { background: var(--primary); color: #121A16; border: none; padding: 12px 20px; border-radius: 14px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 14px rgba(104, 190, 141, 0.25); transition: opacity 0.2s, transform 0.1s;}
         .btn:active { transform: scale(0.95); }
@@ -295,6 +300,7 @@
                     <button class="btn btn-sm" onclick="app.showModal('modal-add-ward')">➕ New Ward</button>
                 </div>
             </div>
+            <div style="font-size:0.8rem; color:var(--text-sub); text-align:center; margin-bottom:10px;">💡 Long press a ward to Edit/Delete</div>
             <div id="wards-list"></div>
         </div>
 
@@ -392,6 +398,15 @@
         <div id="nav-settings" class="nav-item" onclick="app.navTo('page-settings')"><span class="nav-icon">⚙️</span> Settings</div>
     </nav>
 
+    <div id="ward-context-menu-overlay" class="action-sheet-overlay" onclick="app.hideWardContextMenu()">
+        <div class="action-sheet" onclick="event.stopPropagation()">
+            <h3 id="ward-context-title" style="margin-top:0; margin-bottom:20px; text-align:center; color:var(--text-sub); font-weight:600;">Manage Ward</h3>
+            <button class="action-btn" onclick="app.editWardPrompt()">✏️ Edit Name</button>
+            <button class="action-btn" style="color: var(--danger); border-color: rgba(226, 133, 142, 0.3);" onclick="app.deleteWard()">❌ Delete Ward</button>
+            <button class="action-btn" onclick="app.hideWardContextMenu()">Cancel</button>
+        </div>
+    </div>
+
     <div id="context-menu-overlay" class="action-sheet-overlay" onclick="app.hideContextMenu()">
         <div class="action-sheet" onclick="event.stopPropagation()">
             <h3 id="context-title" style="margin-top:0; margin-bottom:20px; text-align:center; color:var(--text-sub); font-weight:600;">Manage Patient</h3>
@@ -479,6 +494,16 @@
         </div>
     </div>
 
+    <div id="modal-edit-ward" class="custom-modal">
+        <h3 style="color:var(--primary); margin-top:0;">Edit Ward Name</h3>
+        <label>Ward Name</label>
+        <input type="text" id="edit-ward-name" placeholder="e.g. MICU, 5C">
+        <div style="text-align:right; margin-top: 20px; display:flex; gap:12px;">
+            <button class="btn btn-outline" style="flex:1; justify-content:center;" onclick="app.hideModal('modal-edit-ward')">Cancel</button> 
+            <button class="btn" style="flex:1; justify-content:center;" onclick="app.saveEditWard()">💾 Save</button>
+        </div>
+    </div>
+
     <script>
         mermaid.initialize({ 
             startOnLoad: false, 
@@ -492,6 +517,7 @@
         let currentUser = null, currentWardId = null;
         let longPressTimer = null, selectedPatientId = null, selectedPatientData = null;
         let selectedArchiveId = null, selectedArchiveData = null;
+        let selectedWardIdForEdit = null, selectedWardDataForEdit = null; // 新增 Ward 編輯變數
         let mediaRecorder = null;
         let selectionRange = null, selectedTextString = "";
         let currentDetailSource = 'patients'; 
@@ -535,7 +561,7 @@
             closeAllModals: () => {
                 app.unlockScroll();
                 document.getElementById('global-overlay').style.display = 'none';
-                document.querySelectorAll('.custom-modal, #ai-result-modal').forEach(el => el.style.display = 'none');
+                document.querySelectorAll('.custom-modal, #ai-result-modal, .action-sheet-overlay').forEach(el => el.style.display = 'none');
                 document.getElementById('selection-toolbar').style.display = 'none';
             },
             showAlert: (msg, title="Notification") => {
@@ -602,11 +628,9 @@
                 }
             },
 
-            // ✨ 無損渲染技術 (DOM Walker)：在背景自動尋找並高亮雲端註解
             applyAnnotations: (element, annotations) => {
                 if (!annotations || !annotations.length) return;
                 
-                // 依長度排序，確保「長單字」優先比對，不會被「短單字」切斷
                 annotations.sort((a, b) => b.term.length - a.term.length);
                 
                 const terms = annotations.map(a => {
@@ -696,7 +720,7 @@
             saveAnnotation: () => {
                 if (!selectionRange) return;
                 const note = document.getElementById('btn-save-annotation').dataset.note;
-                const term = selectedTextString; // 擷取當下選取的單字
+                const term = selectedTextString; 
                 
                 const span = document.createElement('span');
                 span.className = 'ai-note-link';
@@ -712,12 +736,10 @@
                 selectionRange.insertNode(span);
                 app.closeAllModals();
 
-                // ✨ 雲端回寫機制：將單字與註解存入 JSON
                 if (selectedPatientId && selectedPatientData && selectedPatientData.medical_data) {
                     if (!selectedPatientData.medical_data.annotations) {
                         selectedPatientData.medical_data.annotations = [];
                     }
-                    // 檢查是否已經存過這個單字，有的話就覆蓋新解釋，沒有就新增
                     const existingIdx = selectedPatientData.medical_data.annotations.findIndex(a => a.term.toLowerCase() === term.toLowerCase());
                     if (existingIdx >= 0) {
                         selectedPatientData.medical_data.annotations[existingIdx].note = note;
@@ -725,7 +747,6 @@
                         selectedPatientData.medical_data.annotations.push({ term, note });
                     }
                     
-                    // 背景默默上傳 Supabase，不干擾使用者操作
                     if (supabaseClient) {
                         supabaseClient.from('patients')
                             .update({ medical_data: selectedPatientData.medical_data })
@@ -895,12 +916,94 @@
                 } else if(pageId.includes('settings')) document.getElementById('nav-settings').classList.add('active');
             },
 
+            // --- 🌟 Ward Logic with Long Press 🌟 ---
             loadWards: async () => {
                 if(!supabaseClient) return;
                 const { data } = await supabaseClient.from('wards').select('*').order('created_at', { ascending: true });
                 const list = document.getElementById('wards-list'); list.innerHTML = '';
-                if(data) data.forEach(w => list.innerHTML += `<div class="card" onclick="app.openWard('${w.id}','${w.name}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0;">${w.name}</h3><span style="color:var(--primary); font-size:1.5rem;">→</span></div>`);
+                if(data) {
+                    data.forEach(w => {
+                        const div = document.createElement('div');
+                        div.className = 'card ward-card';
+                        div.style.cssText = 'cursor:pointer; display:flex; justify-content:space-between; align-items:center;';
+                        div.setAttribute('oncontextmenu', 'return false;');
+                        div.innerHTML = `<h3 style="margin:0;">${w.name}</h3><span style="color:var(--primary); font-size:1.5rem;">→</span>`;
+                        
+                        div.addEventListener('touchstart', (e) => { app.startWardLongPress(e, w); }, {passive: false});
+                        div.addEventListener('touchend', app.cancelLongPress);
+                        div.addEventListener('touchmove', app.cancelLongPress);
+                        div.addEventListener('mousedown', (e) => app.startWardLongPress(e, w)); 
+                        div.addEventListener('mouseup', app.cancelLongPress);
+                        div.addEventListener('mouseleave', app.cancelLongPress);
+                        div.addEventListener('click', () => { 
+                            if(!longPressTimer) app.openWard(w.id, w.name); 
+                        });
+                        
+                        list.appendChild(div);
+                    });
+                }
             },
+            
+            startWardLongPress: (e, ward) => {
+                selectedWardIdForEdit = ward.id;
+                selectedWardDataForEdit = ward;
+                longPressTimer = setTimeout(() => {
+                    if (e.cancelable) e.preventDefault();
+                    app.showWardContextMenu();
+                    longPressTimer = null;
+                }, 600);
+            },
+            showWardContextMenu: () => {
+                if(navigator.vibrate) navigator.vibrate(50);
+                document.getElementById('ward-context-title').innerText = `Ward: ${selectedWardDataForEdit.name}`;
+                app.lockScroll();
+                document.getElementById('ward-context-menu-overlay').style.display = 'flex';
+            },
+            hideWardContextMenu: () => {
+                document.getElementById('ward-context-menu-overlay').style.display = 'none';
+                app.unlockScroll();
+            },
+            
+            editWardPrompt: () => {
+                app.hideWardContextMenu();
+                if (!selectedWardDataForEdit) return;
+                document.getElementById('edit-ward-name').value = selectedWardDataForEdit.name || '';
+                app.showModal('modal-edit-ward');
+            },
+            saveEditWard: async () => {
+                const newName = document.getElementById('edit-ward-name').value;
+                if(!newName) return app.showAlert('Ward name cannot be empty.', "Required Field");
+                app.hideModal('modal-edit-ward');
+                
+                if(!supabaseClient) return;
+                const { error } = await supabaseClient.from('wards').update({ name: newName }).eq('id', selectedWardIdForEdit);
+                if (error) {
+                    app.showAlert("Failed to update ward: " + error.message, "Database Error");
+                } else {
+                    app.loadWards();
+                    if (currentWardId === selectedWardIdForEdit) {
+                        document.getElementById('current-ward-name').innerText = newName;
+                    }
+                }
+            },
+            deleteWard: () => {
+                app.hideWardContextMenu();
+                const targetId = selectedWardIdForEdit;
+                app.showConfirm('Are you sure you want to completely delete this ward? ALL patients inside will be permanently deleted!', async () => {
+                    try {
+                        if(!supabaseClient) throw new Error("No DB connection");
+                        const { error } = await supabaseClient.from('wards').delete().eq('id', targetId);
+                        if (error) throw error;
+                        app.loadWards();
+                        if (currentWardId === targetId) {
+                            app.navTo('page-wards');
+                        }
+                    } catch(e) {
+                        app.showAlert("Delete failed: " + e.message, "Error");
+                    }
+                });
+            },
+
             addWard: async () => {
                 const name = document.getElementById('new-ward-name').value;
                 if(!name) return app.showAlert('Ward name cannot be empty.', "Required Field"); 
@@ -985,7 +1088,6 @@
                 const contentArea = document.getElementById('detail-content-area');
                 contentArea.innerHTML = html;
 
-                // ✨ 呼叫掃描機器人，將雲端記憶的註解重新高亮在畫面上
                 if (md.annotations && md.annotations.length > 0) {
                     app.applyAnnotations(contentArea, md.annotations);
                 }
@@ -1114,7 +1216,6 @@
                         let aiText = result.candidates[0].content.parts[0].text;
                         let parsedAI = JSON.parse(aiText);
                         
-                        // ✨ AI 融合資料時，強制保留舊的 Annotations
                         if (oldData.medical_data && oldData.medical_data.annotations) {
                             parsedAI.annotations = oldData.medical_data.annotations;
                         }
