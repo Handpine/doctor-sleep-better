@@ -1,10 +1,11 @@
-const CACHE_NAME = 'dsb-v-final-v5'; 
+// 升級到 v6，並拔除了 mermaid.js 以減輕負擔
+const CACHE_NAME = 'dsb-v-final-v6'; 
 
 const ASSETS = [
   './index.html',
   './manifest.json',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-  'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js'
+  'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
 ];
 
 self.addEventListener('install', (e) => {
