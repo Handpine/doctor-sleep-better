@@ -103,7 +103,7 @@
         .detail-content strong { font-weight: 600; color: #1A221E; }
         [data-theme="dark"] .detail-content strong { color: #FFFFFF; }
         
-        .ai-note-link { border-bottom: 2px dashed var(--primary); cursor: pointer; color: var(--primary); font-weight: 600; text-decoration: none; transition: background 0.2s, padding 0.2s; border-radius: 4px;}
+        .ai-note-link { border-bottom: 2px dashed var(--primary); cursor: pointer; color: var(--primary); font-weight: 600; text-decoration: none; transition: background 0.3s ease, padding 0.2s, transform 0.2s; border-radius: 4px;}
         .ai-note-link:hover { background: var(--teal-light); padding: 0 4px; color: #121A16; border-bottom: none;}
 
         /* Language Toggle Segmented Control */
@@ -150,6 +150,12 @@
         #selection-toolbar button:active { background: rgba(255,255,255,0.1); }
         .toolbar-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.2); }
 
+        /* Toast Notifications */
+        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10000; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast { background: rgba(30, 45, 36, 0.95); color: #E8EFEA; padding: 12px 20px; border-radius: 50px; font-size: 0.9rem; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px); display: flex; align-items: center; gap: 8px; animation: toastIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes toastIn { from { transform: translate(-50%, -20px) scale(0.9); opacity: 0; } to { transform: translate(0, 0) scale(1); opacity: 1; } }
+        .toast.fade-out { opacity: 0; transition: opacity 0.3s ease; }
+
         #global-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(18, 26, 22, 0.4); z-index:9998; backdrop-filter: blur(4px); }
 
         .custom-modal { 
@@ -182,6 +188,7 @@
 </head>
 <body>
 
+    <div id="toast-container"></div>
     <div id="global-overlay" onclick="app.closeAllModals()"></div>
     
     <div id="selection-toolbar">
@@ -192,7 +199,7 @@
 
     <div id="ai-result-modal" class="custom-modal">
         <h3 id="ai-insight-title" style="color:var(--primary); margin-top:0;">AI Insight</h3>
-        <div id="ai-result-content" class="selectable-text detail-content" style="margin-bottom:20px;">Thinking...</div>
+        <div id="ai-result-content" class="selectable-text detail-content" style="margin-bottom:20px;"></div>
         <div style="display:flex; justify-content:flex-end; gap:12px;">
             <button class="btn btn-outline" onclick="app.closeAllModals()">Close</button>
             <button id="btn-save-annotation" class="btn" style="display:none;" onclick="app.saveAnnotation()">💾 Save Note</button>
@@ -446,8 +453,10 @@
                 selectionPrompt: "",
                 defaultLang: "zh"
             },
-            currentCardData: {}, // 暫存目前開啟之病人的完整 JSON，供語系切換使用
+            currentCardData: {},
             currentViewLang: "zh",
+            pendingAnnotationData: null,
+            pendingAnnotationRange: null,
             
             apiQueue: Promise.resolve(),
             enqueueApiCall: (apiFunction) => {
@@ -468,6 +477,18 @@
 
             lockScroll: () => { document.body.classList.add('modal-open'); },
             unlockScroll: () => { document.body.classList.remove('modal-open'); },
+
+            showToast: (msg, icon="🤖") => {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                toast.className = 'toast';
+                toast.innerHTML = `<span style="font-size: 1.2rem;">${icon}</span> <span>${msg}</span>`;
+                container.appendChild(toast);
+                setTimeout(() => {
+                    toast.classList.add('fade-out');
+                    setTimeout(() => toast.remove(), 300);
+                }, 3000);
+            },
 
             showModal: (id) => {
                 app.lockScroll();
@@ -531,6 +552,15 @@
             init: async () => {
                 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
                 document.addEventListener('selectionchange', app.handleSelectionChange);
+
+                document.addEventListener("visibilitychange", () => {
+                    if (document.visibilityState === 'visible' && currentUser) {
+                        app.resumeProcessing();
+                        if (document.getElementById('page-patients').classList.contains('active')) {
+                            app.loadPatients();
+                        }
+                    }
+                });
 
                 const localData = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
                 if (localData.supabaseUrl && localData.supabaseKey) {
@@ -598,56 +628,140 @@
             
             aiLookupSelected: () => {
                 if (!app.state.keys.text) return app.showAlert("Please configure Text AI Key in Settings.");
-                document.getElementById('global-overlay').style.display = 'block';
-                const modal = document.getElementById('ai-result-modal');
-                modal.style.display = 'block';
-                app.lockScroll();
                 
-                document.getElementById('ai-insight-title').innerText = "AI Insight"; 
-                document.getElementById('ai-result-content').innerHTML = '<div class="status-badge status-processing" style="background:transparent; justify-content:flex-start;">Analyzing term...</div>';
-                document.getElementById('btn-save-annotation').style.display = 'none';
+                const term = selectedTextString;
+                // 🌟 時空膠囊：在點下按鈕的這一瞬間，立刻鎖定是哪位病人、哪份資料、哪段 DOM
+                const queryPatientId = selectedPatientId;
+                const queryPatientData = selectedPatientData;
+                const savedRange = selectionRange; 
+
+                app.closeAllModals(); 
+                app.showToast(`Analyzing: "${term}"...`, "⚙️"); 
                 
                 app.enqueueApiCall(async () => {
                     const prompt = app.state.selectionPrompt || "Explain this medical term briefly.";
                     try {
                         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${app.state.models.text}:generateContent?key=${app.state.keys.text}`, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ contents: [{ parts: [{ text: `${prompt}\nKeyword: "${selectedTextString}"` }] }] })
+                            body: JSON.stringify({ contents: [{ parts: [{ text: `${prompt}\nKeyword: "${term}"` }] }] })
                         });
                         const result = await res.json();
+                        if(result.error) throw result.error;
                         const aiText = result.candidates[0].content.parts[0].text;
+                        
+                        document.getElementById('global-overlay').style.display = 'block';
+                        const modal = document.getElementById('ai-result-modal');
+                        modal.style.display = 'block';
+                        app.lockScroll();
+                        
+                        document.getElementById('ai-insight-title').innerText = `AI Insight: ${term}`;
                         document.getElementById('ai-result-content').innerHTML = marked.parse(aiText);
-                        if (document.getElementById('page-patient-detail').classList.contains('active')) {
-                            document.getElementById('btn-save-annotation').style.display = 'block';
-                            document.getElementById('btn-save-annotation').dataset.note = aiText;
+                        
+                        // 確保只有在正常的病人卡片中發起的，才允許存檔
+                        if (queryPatientId && queryPatientData) {
+                            const btnSave = document.getElementById('btn-save-annotation');
+                            btnSave.style.display = 'block';
+                            btnSave.dataset.note = aiText;
+                            btnSave.dataset.term = term;
+                            btnSave.dataset.patientId = queryPatientId; // 將原始目標病人的 ID 寫入按鈕
+                            
+                            // 將資料庫本體與 DOM 選取區塊存在全域，等待 Save 觸發
+                            app.pendingAnnotationData = queryPatientData;
+                            app.pendingAnnotationRange = savedRange;
+                        } else {
+                            document.getElementById('btn-save-annotation').style.display = 'none';
                         }
-                    } catch(e) { document.getElementById('ai-result-content').innerText = "Error: " + e.message; }
+                    } catch(e) { 
+                        app.showToast("Analysis failed.", "⚠️");
+                        console.error(e);
+                    }
                 });
             },
             
-            saveAnnotation: () => {
-                if (!selectionRange) return;
-                const note = document.getElementById('btn-save-annotation').dataset.note;
-                const term = selectedTextString; 
-                
-                const span = document.createElement('span');
-                span.className = 'ai-note-link'; span.innerText = term; span.title = 'Click to view AI insight'; 
-                span.onclick = (e) => { e.stopPropagation(); app.showSavedNote(note, span.innerText); };
-                
-                selectionRange.deleteContents(); selectionRange.insertNode(span);
-                app.closeAllModals();
-
-                if (selectedPatientId && selectedPatientData && selectedPatientData.medical_data) {
-                    if (!selectedPatientData.medical_data.annotations) selectedPatientData.medical_data.annotations = [];
-                    const existingIdx = selectedPatientData.medical_data.annotations.findIndex(a => a.term.toLowerCase() === term.toLowerCase());
-                    if (existingIdx >= 0) selectedPatientData.medical_data.annotations[existingIdx].note = note;
-                    else selectedPatientData.medical_data.annotations.push({ term, note });
-                    
-                    if (supabaseClient) {
-                        supabaseClient.from('patients').update({ medical_data: selectedPatientData.medical_data }).eq('id', selectedPatientId)
-                            .then(({error}) => { if (error) console.error("Failed to save annotation to cloud:", error); });
+            scrollToTerm: (term) => {
+                // 給予一點時間讓網頁把卡片內容渲染出來，再開始尋找單字在哪裡
+                setTimeout(() => {
+                    const spans = document.querySelectorAll('.ai-note-link');
+                    for (let span of spans) {
+                        if (span.innerText.toLowerCase() === term.toLowerCase()) {
+                            span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            
+                            // 加上高光動畫提示使用者單字在哪裡
+                            const originalBg = span.style.background;
+                            span.style.transition = 'background 0.4s ease, transform 0.2s';
+                            span.style.background = 'rgba(212, 163, 115, 0.4)'; // 用類似螢光筆的顏色高光
+                            span.style.transform = 'scale(1.1)';
+                            
+                            setTimeout(() => {
+                                span.style.background = originalBg;
+                                span.style.transform = 'scale(1)';
+                            }, 1200);
+                            break;
+                        }
                     }
+                }, 200);
+            },
+
+            saveAnnotation: () => {
+                const btnSave = document.getElementById('btn-save-annotation');
+                const note = btnSave.dataset.note;
+                const term = btnSave.dataset.term; 
+                const targetPatientId = btnSave.dataset.patientId;
+                
+                const targetData = app.pendingAnnotationData;
+                const range = app.pendingAnnotationRange;
+                
+                app.closeAllModals();
+                
+                if (!targetPatientId || !targetData || !targetData.medical_data) return;
+
+                // 1. 更新資料庫：直接存入時空膠囊中紀錄的目標病人
+                if (!targetData.medical_data.annotations) targetData.medical_data.annotations = [];
+                const existingIdx = targetData.medical_data.annotations.findIndex(a => a.term.toLowerCase() === term.toLowerCase());
+                if (existingIdx >= 0) targetData.medical_data.annotations[existingIdx].note = note;
+                else targetData.medical_data.annotations.push({ term, note });
+                
+                if (supabaseClient) {
+                    supabaseClient.from('patients').update({ medical_data: targetData.medical_data }).eq('id', targetPatientId)
+                        .then(({error}) => { if (error) console.error("Failed to save annotation to cloud:", error); });
                 }
+
+                // 2. 判斷並更新 UI
+                if (targetPatientId === selectedPatientId && document.getElementById('page-patient-detail').classList.contains('active')) {
+                    // 還在同一個病人的畫面上
+                    if (range && range.startContainer && document.body.contains(range.startContainer)) {
+                        try {
+                            const span = document.createElement('span');
+                            span.className = 'ai-note-link'; span.innerText = term; span.title = 'Click to view AI insight'; 
+                            span.onclick = (e) => { e.stopPropagation(); app.showSavedNote(note, span.innerText); };
+                            
+                            range.deleteContents(); 
+                            range.insertNode(span);
+                            
+                            span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            span.style.transition = 'background 0.4s ease';
+                            span.style.background = 'rgba(212, 163, 115, 0.4)';
+                            setTimeout(() => span.style.background = '', 1200);
+
+                        } catch(e) {
+                            app.switchCardLang(app.currentViewLang);
+                            app.scrollToTerm(term);
+                        }
+                    } else {
+                        app.switchCardLang(app.currentViewLang);
+                        app.scrollToTerm(term);
+                    }
+                } else {
+                    // 🌟 如果使用者已經離開該病人畫面，自動跳轉回去，並捲動到該位置
+                    app.openPatientDetail(targetData, 'patients');
+                    app.scrollToTerm(term);
+                }
+
+                app.showToast("Note saved.", "💾");
+
+                // 清空快取
+                app.pendingAnnotationRange = null;
+                app.pendingAnnotationData = null;
             },
 
             showLoginPage: () => {
@@ -713,6 +827,7 @@
                 document.getElementById('main-nav').style.display = 'flex';
                 await app.loadSettings();
                 app.loadWards();
+                app.resumeProcessing(); 
                 app.navTo('page-wards');
             },
             logout: async () => { 
@@ -874,8 +989,6 @@
                 
                 if(data) data.forEach(p => {
                     const md = p.medical_data || {}; 
-                    
-                    // Fallback 邏輯：處理新/舊資料結構差異 (判斷有沒有分語言版本)
                     let displayMd = md[app.state.defaultLang] || md['zh'] || md;
                     
                     const basic = p.basic_info || {};
@@ -918,6 +1031,7 @@
             openPatientDetail: async (p, source) => {
                 currentDetailSource = source;
                 selectedPatientData = p; 
+                selectedPatientId = p.id; 
                 app.currentCardData = p.medical_data || {};
                 
                 app.navTo('page-patient-detail');
@@ -928,7 +1042,6 @@
                     await supabaseClient.from('patients').update({ status: 'read' }).eq('id', p.id);
                 }
 
-                // 設定預設視圖語言 (讀取設定或退回 zh)
                 app.currentViewLang = app.state.defaultLang || 'zh';
                 app.switchCardLang(app.currentViewLang);
 
@@ -938,21 +1051,16 @@
                 };
             },
             
-            // --- 🔄 切換卡片語言版本邏輯 ---
             switchCardLang: (langKey) => {
                 app.currentViewLang = langKey;
-                
-                // 更新 Toggle UI 樣式
                 document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
                 document.getElementById(`btn-lang-${langKey}`).classList.add('active');
 
                 const fullData = app.currentCardData;
-                // 如果是舊版資料(沒有分多語系)，直接拿根目錄
                 let md = fullData[langKey] || fullData['zh'] || fullData; 
 
                 const renderSec = (title, content) => `<div class="detail-section"><div class="detail-title">${title}</div><div class="detail-content">${content || '<span class="unknown-data">Nil</span>'}</div></div>`;
                 
-                // 處理 Underlying Disease 陣列渲染 (優化條列排版)
                 let underlyingHtml = 'Nil';
                 if (Array.isArray(md.underlying) && md.underlying.length > 0) {
                     underlyingHtml = md.underlying.map(item => `<div style="margin-bottom:4px;">• ${item}</div>`).join('');
@@ -975,8 +1083,6 @@
                 const contentArea = document.getElementById('detail-content-area');
                 contentArea.innerHTML = html;
 
-                // 重新綁定 Annotation (若有)
-                // 舊版把 annotations 存在 md 裡，新版統一存在 fullData.annotations 中較好，這裡做相容處理
                 const annotationsToApply = fullData.annotations || md.annotations;
                 if (annotationsToApply && annotationsToApply.length > 0) {
                     app.applyAnnotations(contentArea, annotationsToApply);
@@ -1022,8 +1128,14 @@
                 app.hideModal('modal-add-patient');
                 
                 if(!supabaseClient) return;
+
+                let base64 = null;
+                if (fileInput.files.length > 0) base64 = await app.fileToBase64(fileInput.files[0]);
+                const tempRaw = JSON.stringify({ text: rawText, image: base64, type: 'new' });
+
                 const { data, error } = await supabaseClient.from('patients').insert({ 
-                    ward_id: currentWardId, bed_no: bed, basic_info: { name: name }, status: 'processing' 
+                    ward_id: currentWardId, bed_no: bed, basic_info: { name: name }, 
+                    status: 'processing', raw_data: tempRaw 
                 }).select().single();
                 
                 if (error || !data) {
@@ -1033,8 +1145,6 @@
                 app.loadPatients();
 
                 app.enqueueApiCall(async () => {
-                    let base64 = null;
-                    if (fileInput.files.length > 0) base64 = await app.fileToBase64(fileInput.files[0]);
                     await app.processPatientData(data.id, rawText, base64);
                 });
 
@@ -1058,14 +1168,52 @@
                 
                 const targetId = selectedPatientId;
                 const targetData = selectedPatientData;
-                await supabaseClient.from('patients').update({ status: 'processing' }).eq('id', targetId);
+
+                let base64 = null;
+                if (fileInput.files.length > 0) base64 = await app.fileToBase64(fileInput.files[0]);
+                const tempRaw = JSON.stringify({ text: text, image: base64, type: 'update' });
+
+                await supabaseClient.from('patients').update({ 
+                    status: 'processing', raw_data: tempRaw, updated_at: new Date() 
+                }).eq('id', targetId);
                 app.loadPatients(); 
 
                 app.enqueueApiCall(async () => {
-                    let base64 = null;
-                    if (fileInput.files.length > 0) base64 = await app.fileToBase64(fileInput.files[0]);
                     await app.processUpdateData(targetId, targetData, text, base64);
                 });
+            },
+
+            resumeProcessing: async () => {
+                if(!supabaseClient || !app.state.keys.text) return;
+                const { data } = await supabaseClient.from('patients')
+                    .select('*')
+                    .in('status', ['processing', 'retrying_1', 'retrying_2', 'retrying_3']);
+                
+                if(data && data.length > 0) {
+                    const now = new Date();
+                    data.forEach(p => {
+                        const updatedTime = new Date(p.updated_at);
+                        const diffMs = now - updatedTime;
+                        if (diffMs > 45000 && p.raw_data) {
+                            app.runRecovery(p);
+                        }
+                    });
+                }
+            },
+
+            runRecovery: async (p) => {
+                await supabaseClient.from('patients').update({ updated_at: new Date() }).eq('id', p.id); 
+                app.showToast(`Resuming AI task for Bed ${p.bed_no}...`, "🔄");
+                try {
+                    const parsed = JSON.parse(p.raw_data);
+                    if(parsed.type === 'new') {
+                        app.enqueueApiCall(() => app.processPatientData(p.id, parsed.text, parsed.image));
+                    } else if(parsed.type === 'update') {
+                        app.enqueueApiCall(() => app.processUpdateData(p.id, p, parsed.text, parsed.image));
+                    }
+                } catch(e) {
+                    app.enqueueApiCall(() => app.processPatientData(p.id, p.raw_data, null));
+                }
             },
 
             processUpdateData: async (patientId, oldData, newText, newImageBase64) => {
@@ -1075,7 +1223,6 @@
                 }
                 const oldMdStr = JSON.stringify(oldData.medical_data || {});
                 
-                // 這裡沿用 3 語言架構 Prompt
                 const prompt = `You are a clinical assistant. Merge the [New Progress Note/Image] into the [Existing Patient Data]. 
                 Return strictly pure JSON containing THREE versions ("zh", "en_short", "en_full") exactly matching this structure:
                 {
@@ -1104,7 +1251,7 @@
                         if (oldData.medical_data && oldData.medical_data.annotations) {
                             parsedAI.annotations = oldData.medical_data.annotations;
                         }
-                        await supabaseClient.from('patients').update({ medical_data: parsedAI, status: 'done', updated_at: new Date() }).eq('id', patientId);
+                        await supabaseClient.from('patients').update({ medical_data: parsedAI, raw_data: null, status: 'done', updated_at: new Date() }).eq('id', patientId);
                         app.loadPatients(); return; 
                     } catch (e) { 
                         if (e.message && (e.message.includes('429') || e.message.includes('Quota') || e.message.includes('RESOURCE_EXHAUSTED'))) {
@@ -1122,7 +1269,6 @@
                 if (!selectedPatientData) return;
                 const p = selectedPatientData;
                 
-                // 抓取當前語系資料作為編輯基礎 (為避免複雜，手動編輯預設只改該特定語系)
                 const fullData = p.medical_data || {};
                 let md = fullData[app.state.defaultLang] || fullData['zh'] || fullData;
                 
@@ -1150,7 +1296,6 @@
                 const fullData = selectedPatientData.medical_data || {};
                 const langToUpdate = app.state.defaultLang || 'zh';
                 
-                // 如果是舊資料沒有分語言，就幫它套上結構
                 if(!fullData[langToUpdate]) {
                     fullData[langToUpdate] = { ...fullData };
                 }
@@ -1180,7 +1325,6 @@
                 app.loadPatients();
             },
 
-            // --- 🚀 關鍵更新：要求 AI 生成 3 種版本 ---
             processPatientData: async (patientId, text, imageBase64) => {
                 if (!app.state.keys.text) {
                     await supabaseClient.from('patients').update({ status: 'error' }).eq('id', patientId);
